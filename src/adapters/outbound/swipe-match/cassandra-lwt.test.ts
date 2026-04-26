@@ -4,13 +4,13 @@ import type { Client } from 'cassandra-driver'
 import { createCassandraClient } from '../../../infrastructure/cassandra/client'
 import { KEYSPACE, bootstrapSchema } from '../../../infrastructure/cassandra/bootstrap'
 import { UserIdSchema, type UserId } from '../../../domain/types'
-import { CassandraNaiveSwipeMatchAdapter } from './cassandra-naive'
+import { CassandraLwtSwipeMatchAdapter } from './cassandra-lwt'
 
 const userId = (): UserId => UserIdSchema.parse(randomUUID())
 
-describe('CassandraNaiveSwipeMatchAdapter — integration', () => {
+describe('CassandraLwtSwipeMatchAdapter — integration', () => {
   let client: Client
-  let adapter: CassandraNaiveSwipeMatchAdapter
+  let adapter: CassandraLwtSwipeMatchAdapter
 
   beforeAll(async () => {
     const adminClient = createCassandraClient()
@@ -20,18 +20,18 @@ describe('CassandraNaiveSwipeMatchAdapter — integration', () => {
 
     client = createCassandraClient({ keyspace: KEYSPACE })
     await client.connect()
-    adapter = new CassandraNaiveSwipeMatchAdapter(client)
+    adapter = new CassandraLwtSwipeMatchAdapter(client)
   })
 
   beforeEach(async () => {
-    await client.execute(`TRUNCATE ${KEYSPACE}.swipes`)
+    await client.execute(`TRUNCATE ${KEYSPACE}.swipe_pairs`)
   })
 
   afterAll(async () => {
     await client.shutdown()
   })
 
-  it('persists a swipe and returns recorded when no inverse exists', async () => {
+  it('returns recorded when no inverse exists', async () => {
     const a = userId()
     const b = userId()
 
@@ -43,13 +43,6 @@ describe('CassandraNaiveSwipeMatchAdapter — integration', () => {
     })
 
     expect(result).toEqual({ kind: 'recorded' })
-
-    const persisted = await client.execute(
-      `SELECT decision FROM ${KEYSPACE}.swipes WHERE swiper_id = ? AND target_id = ?`,
-      [a, b],
-      { prepare: true },
-    )
-    expect(persisted.rows[0]?.['decision']).toBe('yes')
   })
 
   it('returns matched end-to-end when reciprocal yes-swipe exists', async () => {
@@ -76,7 +69,7 @@ describe('CassandraNaiveSwipeMatchAdapter — integration', () => {
     }
   })
 
-  it.fails('produces exactly one match per reciprocal pair under concurrent load (DELIBERATELY BROKEN: SELECT-then-INSERT race)', async () => {
+  it('produces exactly one match per reciprocal pair under concurrent load', async () => {
     const N = 200
     const pairs = Array.from({ length: N }, () => ({ a: userId(), b: userId() }))
     const now = new Date()

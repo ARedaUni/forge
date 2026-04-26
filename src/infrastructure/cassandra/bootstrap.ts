@@ -17,4 +17,15 @@ export async function bootstrapSchema(client: Client): Promise<void> {
       PRIMARY KEY (swiper_id, target_id)
     )
   `)
+
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS ${KEYSPACE}.swipe_pairs (
+      low_id uuid,
+      high_id uuid,
+      swiper_id uuid,
+      decision text,
+      created_at timestamp,
+      PRIMARY KEY ((low_id, high_id), swiper_id)
+    )
+  `)
 }
