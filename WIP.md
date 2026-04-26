@@ -25,41 +25,51 @@ adapters/
 infrastructure/← connection helpers, schema bootstrap.
 ```
 
-Each interesting port will have ≥2 adapters and a shared contract test suite.
+Each interesting port has ≥2 adapters and a shared contract test suite.
 
 ### Ports planned
 
-| Port | Adapters planned |
-|---|---|
-| `SwipeMatchPort` | cassandra-naive (broken), cassandra-lwt-sorted-pair, redis-lua, postgres-for-update |
-| `FeedPort` | postgres-postgis, elasticsearch |
-| `SeenFilterPort` | client-cache simulation, redis-bloom |
-| `FeedCachePort` | none (live query), redis + cron warmer |
+| Port | Adapters | Status |
+|---|---|---|
+| `SwipeMatchPort` | cassandra-naive (broken), cassandra-lwt, redis-lua, postgres-for-update | naive ✅, lwt ✅, redis-lua next, postgres later |
+| `FeedPort` | postgres-postgis, elasticsearch | not yet |
+| `SeenFilterPort` | client-cache simulation, redis-bloom | not yet |
+| `FeedCachePort` | none (live query), redis + cron warmer | not yet |
 
 ## Increments
 
 ### ✅ Increment 1 — Scaffold
 
-- `package.json` (zod, typescript, vitest, @types/node — nothing else; deps land per increment)
-- `tsconfig.json` strict, `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`, `verbatimModuleSyntax`
-- `vitest.config.ts`
-- Domain types: `UserId` (branded UUID via Zod), `SwipeDecision`, `Swipe`, `Match`
-- `SwipeMatchPort` interface + `SwipeResult` discriminated union (`{kind:'recorded'} | {kind:'matched', match}`)
-- `.gitignore`
-- No infra, no adapters, no tests yet
+Strict TS config, vitest, Zod schemas (`UserId` branded UUID, `Swipe`, `Match`), `SwipeMatchPort` interface with `SwipeResult` discriminated union.
 
-### ✅ Increment 2 — First port, first adapter (deliberately broken)
+### ✅ Increment 2 — First adapter (deliberately broken)
 
-- `docker-compose.yml` — Cassandra 5.0 only (other services land with their adapters)
-- `cassandra-driver` ^4.7.2 added; esbuild build script approved via `pnpm.onlyBuiltDependencies`
-- `infrastructure/cassandra/client.ts` — `createCassandraClient()`. Connection-only, default consistency QUORUM
-- `infrastructure/cassandra/bootstrap.ts` — exports `KEYSPACE` constant + `bootstrapSchema()` that creates keyspace + `swipes` table (`PRIMARY KEY (swiper_id, target_id)` — partition by swiper, the article's naive schema)
-- `domain/match-rule.ts` — pure `evaluateSwipe(swipe, inverseDecision): SwipeResult`. Canonicalizes match user IDs by sort order so A→B and B→A produce the same `Match` shape
-- `domain/match-rule.test.ts` — 8 unit tests (exhaustive yes/no matrix, null-inverse, ID canonicalization, matchedAt). Runs in 2ms.
-- `adapters/outbound/swipe-match/cassandra-naive.ts` — implements `SwipeMatchPort`. SELECT inverse → INSERT this swipe → call `evaluateSwipe`. Trust-boundary parsing of `decision` column via `SwipeDecisionSchema.safeParse`.
-- `adapters/outbound/swipe-match/cassandra-naive.test.ts` — 2 integration tests against real Cassandra (persistence + end-to-end match wiring). ~290ms.
+`docker-compose.yml` for Cassandra 5.0. `infrastructure/cassandra/{client,bootstrap}.ts` separating connection from schema. Pure `evaluateSwipe()` domain rule + 8 microsecond unit tests. `CassandraNaiveSwipeMatchAdapter` with `swipes` table partitioned by `swiper_id`. SELECT inverse → INSERT → evaluate. Functionally correct under serial use, has a dormant race under concurrent reciprocal writes.
 
-**Status:** all 10 tests green. Adapter is functionally correct under serial use; it has a known race condition under concurrency that increment 3 will expose.
+### ✅ Increment 3 — Concurrency torture test (race exposed)
+
+Concurrency test fires 200 reciprocal pairs (400 swipes) via `Promise.all`, asserts every pair is detected as a match. Result on naive adapter: **0 / 200 detected** — every match lost. Cause: `Promise.all` dispatches all SELECTs before any INSERT round-trips, so every SELECT sees nothing.
+
+The test now lives in the shared contract suite. Marked `it.fails` for the naive adapter to document the race without breaking CI.
+
+### ✅ Increment 4 — Cassandra LWT adapter (race fixed)
+
+New `swipe_pairs` table partitioned by **canonical pair** `((low_id, high_id), swiper_id)`. Both directions of a swipe land on the same partition → Paxos can serialize them.
+
+`CassandraLwtSwipeMatchAdapter`:
+1. `INSERT IF NOT EXISTS` (LWT) into `swipe_pairs`
+2. `SELECT ... CONSISTENCY SERIAL` on the partition
+3. `evaluateSwipe(swipe, inverseDecisionFromPartition)`
+
+Passes the concurrency contract: every reciprocal pair detected. Reports 1–2 matches per pair depending on read-after-LWT timing — duplicate detection is a downstream notification concern, not a correctness bug.
+
+**Two architectural levers in play:**
+- *Schema*: partition by canonical pair so both writes meet on the same replica set. (Naive partitioning by user makes coordination impossible.)
+- *Consistency*: `SERIAL` on the read links the read path to the Paxos state machine. Plain `QUORUM` reads can miss in-flight LWTs.
+
+### ✅ Increment 5 — Shared contract extraction
+
+`adapters/outbound/swipe-match/contract.ts` defines `runSwipeMatchContract({ name, setup, knownBroken })`. Each adapter's test file is a thin caller (~25 lines) supplying connection/teardown/truncate. The contract owns the test bodies. `knownBroken: { concurrency: true }` flips the naive adapter's concurrency case to `it.fails`.
 
 ## Current file tree
 
@@ -80,39 +90,49 @@ Each interesting port will have ≥2 adapters and a shared contract test suite.
     │       └── swipe-match-port.ts
     ├── infrastructure/
     │   └── cassandra/
-    │       ├── bootstrap.ts
+    │       ├── bootstrap.ts        ← swipes + swipe_pairs
     │       └── client.ts
     └── adapters/
         └── outbound/
             └── swipe-match/
+                ├── contract.ts
                 ├── cassandra-naive.ts
-                └── cassandra-naive.test.ts
+                ├── cassandra-naive.test.ts
+                ├── cassandra-lwt.ts
+                └── cassandra-lwt.test.ts
 ```
 
 ## Test report (current)
 
 ```
-✓ src/domain/match-rule.test.ts                            (8 tests, 2ms)
-✓ src/adapters/.../cassandra-naive.test.ts                 (2 tests, 291ms)
-Test Files  2 passed
-Tests       10 passed
+✓ src/domain/match-rule.test.ts                 (8 tests, 2ms)
+✓ .../cassandra-naive.test.ts                   (3 tests, 255ms)  ← concurrency = it.fails
+✓ .../cassandra-lwt.test.ts                     (3 tests, 396ms)
+Test Files  3 passed
+Tests       14 passed
 ```
 
-## Next: Increment 3 — Concurrency torture test (expose the race)
+## Next: Increment 6 — Redis-Lua adapter
 
-Write a test that:
-1. Generates N user pairs (e.g., N=200)
-2. Fires both reciprocal swipes (A→B and B→A) for every pair concurrently via `Promise.all`
-3. Counts how many calls returned `{kind:'matched'}`
-4. Asserts the count equals N (one match per pair)
+Goal: third adapter on the same contract, using a single atomic Lua script instead of distributed consensus.
 
-Expected outcome: **the test FAILS on `CassandraNaiveSwipeMatchAdapter`** because two concurrent SELECTs both see nothing before either INSERT lands. The reported lost-match count is the experimental measurement of the race.
+Mechanism: Redis is single-threaded; a Lua script runs to completion without interleaving. The script does GET-inverse + SET-this-swipe + return whether a match was triggered, all atomically. No Paxos, no SERIAL — just "the server has one foot."
 
-Once we have this failing test, it becomes the **shared contract test** that every subsequent adapter (Cassandra LWT, Redis Lua, Postgres FOR UPDATE) must pass. That's when we'll extract the contract-test pattern: each adapter's `*.test.ts` becomes a thin caller of `runSwipeMatchContract(name, setup)`.
+Tradeoffs we'll feel:
+- Latency: ~1 round-trip vs LWT's ~4
+- Single point of contention vs distributed quorum
+- Durability story is different (AOF vs Cassandra commit log + replicas)
+
+Plan:
+1. Add Redis service to `docker-compose.yml`
+2. `infrastructure/redis/client.ts`
+3. `adapters/outbound/swipe-match/redis-lua.ts` — embedded Lua script via `EVAL`/`EVALSHA`
+4. `redis-lua.test.ts` — thin caller of the existing contract
 
 ## Open questions / things to revisit
 
-- **Test isolation strategy.** Currently TRUNCATE between tests. Faster than DROP/CREATE; fine for single-suite work. May need per-test keyspaces if we ever parallelize integration tests across files.
-- **Adapter constructor takes a `Client`, not a factory.** Lifecycle (connect/shutdown) lives in test setup. When we add an HTTP layer, application bootstrap will own the connection lifecycle.
-- **`Match` schema has `userAId`/`userBId`** (canonical pair) **not** `swiperId`/`targetId`. The match is symmetric; the swipe that produced it is directional. We may add a `triggeredBy: UserId` field later if the use case needs to know who completed the match.
-- **No application/use-case layer yet.** The adapter currently inlines the orchestration (read → write → decide). When we add multiple adapters and an HTTP layer, we'll likely add `RecordSwipeUseCase` as a thin caller of `port.recordSwipe`. The atomicity has to live in the adapter (otherwise we can't compose LWT or Lua atomic ops), so the use case stays thin.
+- **LWT cost.** ~4 round-trips per write. For high-frequency operations this is too expensive. The next adapter (Redis Lua) gives ~1 round-trip atomicity at the cost of single-process scalability.
+- **Duplicate match detection on LWT.** Concurrent reciprocal swipes can both return `{matched}`. Acceptable here because notifications de-dupe downstream. If we ever wire a synchronous "this is the moment of match" event, only the second writer should fire it — would need an additional LWT to claim the match record.
+- **Per-user read pattern lost on `swipe_pairs`.** Partitioning by canonical pair makes "show me everyone A swiped" expensive. In production we'd write to both `swipes` (by user) and `swipe_pairs` (by pair). Defer until we need the read.
+- **Test isolation strategy.** Currently TRUNCATE between tests. Per-test keyspaces if we ever parallelize integration test files.
+- **No application/use-case layer yet.** Adapters inline orchestration (read → write → decide). Atomicity has to live in the adapter (otherwise we can't compose LWT/Lua atomic ops), so when we add a use case it stays thin.
