@@ -1,14 +1,14 @@
 import { createServer } from './adapters/inbound/http/server'
-import { PostgresPostGisFeedAdapter } from './adapters/outbound/feed/postgres-postgis'
+import { PostgresPostGisFeedAdapter } from './adapters/outbound/feed/postgresPostgis'
 import { PostgresMatchAdapter } from './adapters/outbound/match/postgres'
-import { RedisBloomSeenFilterAdapter } from './adapters/outbound/seen-filter/redis-bloom'
-import { RedisLuaSwipeMatchAdapter } from './adapters/outbound/swipe-match/redis-lua'
+import { RedisBloomSeenFilterAdapter } from './adapters/outbound/seen-filter/redisBloom'
+import { RedisLuaSwipeMatchAdapter } from './adapters/outbound/swipe-match/redisLua'
 import { PostgresUserRepositoryAdapter } from './adapters/outbound/user-repository/postgres'
 import { bootstrapPostgres } from './infrastructure/postgres/bootstrap'
 import { createPostgresPool } from './infrastructure/postgres/client'
 import { createRedisClient } from './infrastructure/redis/client'
-import { GetFeedUseCase } from './use-cases/get-feed'
-import { RecordSwipeUseCase } from './use-cases/record-swipe'
+import { GetFeedUseCase } from './use-cases/getFeed'
+import { RecordSwipeUseCase } from './use-cases/recordSwipe'
 
 async function main(): Promise<void> {
   const pool = createPostgresPool()

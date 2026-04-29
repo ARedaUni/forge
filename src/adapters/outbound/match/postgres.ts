@@ -3,7 +3,7 @@ import type {
   ListMatchesOptions,
   MatchEntry,
   MatchPort,
-} from '../../../domain/match/match-port'
+} from '../../../domain/match/port'
 import { UserIdSchema, type UserId } from '../../../domain/shared/types'
 
 const RECORD_SQL = `

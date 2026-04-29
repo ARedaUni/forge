@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { UserIdSchema } from '../shared/types'
-import { evaluateSwipe } from './match-rule'
+import { evaluateSwipe } from './matchRule'
 import type { Swipe } from './types'
 
 const USER_A = UserIdSchema.parse('00000000-0000-4000-8000-00000000000a')

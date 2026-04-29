@@ -1,13 +1,13 @@
 import { createRedisClient } from '../../../infrastructure/redis/client'
-import { runSeenFilterContract } from './contract'
-import { RedisSetSeenFilterAdapter } from './redis-set'
+import { runMatchContract } from './contract'
+import { RedisZsetMatchAdapter } from './redisZset'
 
-runSeenFilterContract({
-  name: 'redis-set',
+runMatchContract({
+  name: 'redis-zset',
   setup: async () => {
-    const redis = createRedisClient({ db: 1 })
+    const redis = createRedisClient({ db: 3 })
     await redis.connect()
-    const adapter = new RedisSetSeenFilterAdapter(redis)
+    const adapter = new RedisZsetMatchAdapter(redis)
     return {
       adapter,
       truncate: async () => {

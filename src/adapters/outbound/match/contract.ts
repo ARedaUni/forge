@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import type { MatchPort } from '../../../domain/match/match-port'
+import type { MatchPort } from '../../../domain/match/port'
 import { UserIdSchema, type UserId } from '../../../domain/shared/types'
 
 const userId = (): UserId => UserIdSchema.parse(randomUUID())

@@ -1,4 +1,4 @@
-import type { UserProfile } from './types'
+import type { UserProfile } from '../feed/types'
 
 export interface UserRepositoryPort {
   upsert(profile: UserProfile): Promise<void>

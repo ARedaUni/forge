@@ -1,7 +1,7 @@
 import { types, type Client } from 'cassandra-driver'
 import type { UserId } from '../../../domain/shared/types'
-import { evaluateSwipe } from '../../../domain/swipe-match/match-rule'
-import type { SwipeMatchPort, SwipeResult } from '../../../domain/swipe-match/swipe-match-port'
+import { evaluateSwipe } from '../../../domain/swipe-match/matchRule'
+import type { SwipeMatchPort, SwipeResult } from '../../../domain/swipe-match/port'
 import { SwipeDecisionSchema, type Swipe, type SwipeDecision } from '../../../domain/swipe-match/types'
 import { KEYSPACE } from '../../../infrastructure/cassandra/bootstrap'
 

@@ -1,9 +1,9 @@
-import type { MatchPort } from '../domain/match/match-port'
-import type { SeenFilterPort } from '../domain/seen-filter/seen-filter-port'
+import type { MatchPort } from '../domain/match/port'
+import type { SeenFilterPort } from '../domain/seen-filter/port'
 import type {
   SwipeMatchPort,
   SwipeResult,
-} from '../domain/swipe-match/swipe-match-port'
+} from '../domain/swipe-match/port'
 import type { Swipe } from '../domain/swipe-match/types'
 
 export class RecordSwipeUseCase {

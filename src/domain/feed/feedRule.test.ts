@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { matchesFilters } from './feed-rule'
+import { matchesFilters } from './feedRule'
 import { UserIdSchema } from '../shared/types'
 import type { UserProfile } from './types'
 

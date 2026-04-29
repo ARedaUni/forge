@@ -1,6 +1,6 @@
-import type { FeedCandidate, FeedPort } from '../domain/feed/feed-port'
+import type { FeedCandidate, FeedPort } from '../domain/feed/port'
 import type { Location, UserProfile } from '../domain/feed/types'
-import type { SeenFilterPort } from '../domain/seen-filter/seen-filter-port'
+import type { SeenFilterPort } from '../domain/seen-filter/port'
 
 export type GetFeedInput = {
   viewer: UserProfile

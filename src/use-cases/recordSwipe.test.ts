@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import type { MatchPort } from '../domain/match/match-port'
-import type { SeenFilterPort } from '../domain/seen-filter/seen-filter-port'
+import type { MatchPort } from '../domain/match/port'
+import type { SeenFilterPort } from '../domain/seen-filter/port'
 import { UserIdSchema, type UserId } from '../domain/shared/types'
 import type {
   SwipeMatchPort,
   SwipeResult,
-} from '../domain/swipe-match/swipe-match-port'
+} from '../domain/swipe-match/port'
 import type { Swipe } from '../domain/swipe-match/types'
-import { RecordSwipeUseCase } from './record-swipe'
+import { RecordSwipeUseCase } from './recordSwipe'
 
 const SWIPER = UserIdSchema.parse('00000000-0000-4000-8000-00000000000a')
 const TARGET = UserIdSchema.parse('00000000-0000-4000-8000-00000000000b')

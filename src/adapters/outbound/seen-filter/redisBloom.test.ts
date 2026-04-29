@@ -1,6 +1,6 @@
 import { createRedisClient } from '../../../infrastructure/redis/client'
 import { runSeenFilterContract } from './contract'
-import { RedisBloomSeenFilterAdapter } from './redis-bloom'
+import { RedisBloomSeenFilterAdapter } from './redisBloom'
 
 runSeenFilterContract({
   name: 'redis-bloom',

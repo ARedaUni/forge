@@ -1,10 +1,10 @@
 import { createCassandraClient } from '../../../infrastructure/cassandra/client'
 import { KEYSPACE, bootstrapSchema } from '../../../infrastructure/cassandra/bootstrap'
-import { CassandraNaiveSwipeMatchAdapter } from './cassandra-naive'
+import { CassandraLwtSwipeMatchAdapter } from './cassandraLwt'
 import { runSwipeMatchContract } from './contract'
 
 runSwipeMatchContract({
-  name: 'CassandraNaiveSwipeMatchAdapter',
+  name: 'CassandraLwtSwipeMatchAdapter',
   setup: async () => {
     const adminClient = createCassandraClient()
     await adminClient.connect()
@@ -15,14 +15,13 @@ runSwipeMatchContract({
     await client.connect()
 
     return {
-      adapter: new CassandraNaiveSwipeMatchAdapter(client),
+      adapter: new CassandraLwtSwipeMatchAdapter(client),
       truncate: async () => {
-        await client.execute(`TRUNCATE ${KEYSPACE}.swipes`)
+        await client.execute(`TRUNCATE ${KEYSPACE}.swipe_pairs`)
       },
       teardown: async () => {
         await client.shutdown()
       },
     }
   },
-  knownBroken: { concurrency: true },
 })

@@ -1,5 +1,5 @@
 import type Redis from 'ioredis'
-import type { SeenFilterPort } from '../../../domain/seen-filter/seen-filter-port'
+import type { SeenFilterPort } from '../../../domain/seen-filter/port'
 import { UserIdSchema, type UserId } from '../../../domain/shared/types'
 
 const keyFor = (userId: UserId): string => `seen:${userId}`

@@ -1,12 +1,12 @@
 import Fastify, { type FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { LocationSchema, UserProfileSchema } from '../../../domain/feed/types'
-import type { UserRepositoryPort } from '../../../domain/feed/user-repository-port'
-import type { MatchPort } from '../../../domain/match/match-port'
+import type { MatchPort } from '../../../domain/match/port'
 import { UserIdSchema } from '../../../domain/shared/types'
 import { SwipeDecisionSchema } from '../../../domain/swipe-match/types'
-import type { GetFeedUseCase } from '../../../use-cases/get-feed'
-import type { RecordSwipeUseCase } from '../../../use-cases/record-swipe'
+import type { UserRepositoryPort } from '../../../domain/user-repository/port'
+import type { GetFeedUseCase } from '../../../use-cases/getFeed'
+import type { RecordSwipeUseCase } from '../../../use-cases/recordSwipe'
 
 const FeedRequestSchema = z.object({
   viewer: UserProfileSchema,

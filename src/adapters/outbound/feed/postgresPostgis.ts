@@ -1,5 +1,5 @@
 import type pg from 'pg'
-import type { FeedCandidate, FeedPort, FeedQuery } from '../../../domain/feed/feed-port'
+import type { FeedCandidate, FeedPort, FeedQuery } from '../../../domain/feed/port'
 import { GenderSchema, type Gender, type UserProfile } from '../../../domain/feed/types'
 import { UserIdSchema } from '../../../domain/shared/types'
 

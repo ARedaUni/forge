@@ -1,5 +1,5 @@
 import { createRedisClient } from '../../../infrastructure/redis/client'
-import { RedisLuaSwipeMatchAdapter } from './redis-lua'
+import { RedisLuaSwipeMatchAdapter } from './redisLua'
 import { runSwipeMatchContract } from './contract'
 
 runSwipeMatchContract({

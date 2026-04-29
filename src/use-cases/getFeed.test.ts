@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import type { FeedCandidate, FeedPort, FeedQuery } from '../domain/feed/feed-port'
+import type { FeedCandidate, FeedPort, FeedQuery } from '../domain/feed/port'
 import type { Location, UserProfile } from '../domain/feed/types'
-import type { SeenFilterPort } from '../domain/seen-filter/seen-filter-port'
+import type { SeenFilterPort } from '../domain/seen-filter/port'
 import { UserIdSchema, type UserId } from '../domain/shared/types'
-import { GetFeedUseCase } from './get-feed'
+import { GetFeedUseCase } from './getFeed'
 
 const userId = (): UserId => UserIdSchema.parse(randomUUID())
 const ORIGIN: Location = { lat: 0, lng: 0 }

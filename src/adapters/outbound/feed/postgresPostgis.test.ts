@@ -4,7 +4,7 @@ import {
 } from '../../../infrastructure/postgres/bootstrap'
 import { createPostgresPool } from '../../../infrastructure/postgres/client'
 import { runFeedContract } from './contract'
-import { PostgresPostGisFeedAdapter, insertProfile } from './postgres-postgis'
+import { PostgresPostGisFeedAdapter, insertProfile } from './postgresPostgis'
 
 runFeedContract({
   name: 'postgres-postgis',

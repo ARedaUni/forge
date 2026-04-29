@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { UserIdSchema, type UserId } from '../../../domain/shared/types'
-import type { SwipeMatchPort } from '../../../domain/swipe-match/swipe-match-port'
+import type { SwipeMatchPort } from '../../../domain/swipe-match/port'
 
 const userId = (): UserId => UserIdSchema.parse(randomUUID())
 
