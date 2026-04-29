@@ -5,7 +5,7 @@ import { runSwipeMatchContract } from './contract'
 runSwipeMatchContract({
   name: 'RedisLuaSwipeMatchAdapter',
   setup: async () => {
-    const client = createRedisClient()
+    const client = createRedisClient({ db: 0 })
     await client.connect()
 
     return {

@@ -33,7 +33,7 @@ Each interesting port has ≥2 adapters and a shared contract test suite.
 |---|---|---|
 | `SwipeMatchPort` | cassandra-naive (broken), cassandra-lwt, redis-lua, postgres-for-update | naive ✅, lwt ✅, redis-lua ✅, postgres deferred |
 | `FeedPort` | postgres-postgis, elasticsearch | postgis ✅, elasticsearch next |
-| `SeenFilterPort` | redis-set (naive), redis-bloom | not yet |
+| `SeenFilterPort` | redis-set, redis-bloom | both ✅ |
 | `FeedCachePort` | none (live query), redis + cron warmer | not yet |
 
 ## Increments
@@ -194,16 +194,39 @@ Test Files  6 passed
 Tests       34 passed
 ```
 
-## Next: Increment 8 — `SeenFilterPort` (exclude already-swiped profiles)
+### ✅ Increment 8 — `SeenFilterPort` (Set vs Bloom head-to-head)
 
-Hello Interview NFR: *"avoid showing user profiles that the user has previously swiped on."* Deliberately deferred from Increment 7. This is where the [Redis deep dive](https://www.hellointerview.com/learn/system-design/deep-dives/redis) on data structures pays off — Bloom filter vs Set is the whole conversation (memory vs false-positive rate).
+Hello Interview NFR: *"avoid showing user profiles that the user has previously swiped on."* The canonical example for choosing **probabilistic over exact** data structures.
+
+**Domain:**
+- `domain/seen-filter/seen-filter-port.ts` — `add(userId, candidateId)`, `contains(userId, candidateIds): Promise<Set<UserId>>`. Returns the *seen* subset; caller filters them out.
+
+**Two adapters, same contract:**
+
+| Adapter | Mechanism | Memory @ 10K items | Accuracy |
+|---|---|---|---|
+| `redis-set` | Redis Set (`SADD` / `SMISMEMBER`) | ~500 KB / user | exact |
+| `redis-bloom` | RedisBloom (`BF.INSERT` / `BF.MEXISTS`), 1% FP rate | ~12 KB / user (~40× less) | no false negatives, ≤1% false positives |
+
+**Why bloom wins for this use case:** asymmetric error costs. False negative = user sees a profile they've already swiped (broken UX). False positive = user doesn't see a fresh candidate (one of millions — invisible). Bloom only has the second kind. ~40× memory saved.
+
+**Contract `runSeenFilterContract`** asserts 7 invariants — empty store, empty input, no false negatives, returns subset, isolation per user, plus a `!knownLossy.falsePositives` test. Bloom adapter sets `knownLossy: { falsePositives: true }` and skips the exact-only test, satisfying 6/7. Same contract proves both adapters honor the port's promise modulo the *one* dimension bloom explicitly sacrifices.
+
+**Infrastructure:**
+- Swapped `redis:7.4-alpine` → `redis/redis-stack-server:7.4.0-v0` (superset; ships RedisBloom + RediSearch + RedisJSON).
+- Each redis-using test file selects its own logical db (`db: 0` redis-lua, `db: 1` redis-set, `db: 2` redis-bloom). `FLUSHDB` is per-db, so parallel test files don't trample each other. Resolves the "test isolation strategy" open question.
+
+**Result:** 47 tests across 8 files, 673ms. Redis-set 7/7, Redis-bloom 6/6 (skips false-positive prohibition by design).
+
+## Next: Increment 9 — Compose `FeedPort` + `SeenFilterPort` in a use case
+
+The first true *application layer* work. Until now every adapter was used directly by tests; now we need orchestration of two ports for the canonical "give me my feed" flow.
 
 Plan:
-1. Domain: `SeenFilterPort.contains(userId, candidateIds): Promise<Set<UserId>>` (returns the *seen* subset; caller filters them out).
-2. `redis-set` adapter — exact, O(N) memory per user. Baseline.
-3. `redis-bloom` adapter (RedisBloom module, `BF.ADD`/`BF.MEXISTS`) — fixed memory, configurable false-positive rate. Same contract.
-4. Contract test: never returns false negatives; bloom adapter may return false positives, document this as a `knownLossy` flag and assert false-positive rate stays under configured budget over a 10k-element sample.
-5. Later increment 9: compose `FeedPort` + `SeenFilterPort` in a use case. Then build `FeedCachePort` for pre-computation (HI's "Great" hybrid).
+1. `application/get-feed.ts` — `GetFeedUseCase(feedPort, seenFilterPort)`. Calls `feedPort.query(...)`, then `seenFilterPort.contains(viewer.id, candidates.map(c => c.id))`, then filters out the seen subset.
+2. Tests use **in-memory fakes** that satisfy the port contracts — microsecond tests, no DBs.
+3. Demonstrates: orchestration logic decoupled from storage. Swap PostGIS for ES, swap Set for Bloom — use case unchanged.
+4. Later increment 10: `RecordSwipeUseCase` composing SwipeMatchPort + SeenFilterPort.add. After that, FeedCachePort (HI's "Great" tier).
 
 ## Open questions / things to revisit
 
@@ -212,6 +235,5 @@ Plan:
 - **Duplicate match detection on LWT and Redis-Lua.** Concurrent reciprocal swipes can both return `{matched}`. Acceptable here because notifications de-dupe downstream. If we ever wire a synchronous "this is the moment of match" event, only the second writer should fire it — would need a claim mechanism.
 - **Per-user read pattern lost on `swipe_pairs` / Redis hash keys.** Atomicity-friendly partitioning makes "show me everyone A swiped" expensive. In production we'd dual-write to a per-user index. Defer until we need the read.
 - **Redis durability not characterized.** Default `appendfsync everysec` can lose up to 1s of writes on crash. For learning we don't care; for production we'd pair Redis with a durable log (Kafka / commit log replay).
-- **Test isolation strategy.** Currently TRUNCATE / FLUSHDB between tests. Per-test namespaces if we ever parallelize integration test files.
 - **No application/use-case layer yet.** Adapters inline orchestration (read → write → decide). Atomicity has to live in the adapter (otherwise we can't compose LWT/Lua atomic ops), so when we add a use case it stays thin.
 - **Postgres-FOR-UPDATE adapter deferred.** We've already covered the three atomicity classes (CAS, single-thread, lock) by name; building the fourth concretely is rounding-out, not new ground. Revisit if we want a tidy quartet.
