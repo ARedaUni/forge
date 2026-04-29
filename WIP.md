@@ -31,8 +31,8 @@ Each interesting port has ≥2 adapters and a shared contract test suite.
 
 | Port | Adapters | Status |
 |---|---|---|
-| `SwipeMatchPort` | cassandra-naive (broken), cassandra-lwt, redis-lua, postgres-for-update | naive ✅, lwt ✅, redis-lua next, postgres later |
-| `FeedPort` | postgres-postgis, elasticsearch | not yet |
+| `SwipeMatchPort` | cassandra-naive (broken), cassandra-lwt, redis-lua, postgres-for-update | naive ✅, lwt ✅, redis-lua ✅, postgres deferred |
+| `FeedPort` | postgres-postgis, elasticsearch | next |
 | `SeenFilterPort` | client-cache simulation, redis-bloom | not yet |
 | `FeedCachePort` | none (live query), redis + cron warmer | not yet |
 
@@ -71,6 +71,26 @@ Passes the concurrency contract: every reciprocal pair detected. Reports 1–2 m
 
 `adapters/outbound/swipe-match/contract.ts` defines `runSwipeMatchContract({ name, setup, knownBroken })`. Each adapter's test file is a thin caller (~25 lines) supplying connection/teardown/truncate. The contract owns the test bodies. `knownBroken: { concurrency: true }` flips the naive adapter's concurrency case to `it.fails`.
 
+### ✅ Increment 6 — Redis-Lua adapter (third mechanism)
+
+Added Redis 7.4 to docker-compose. `infrastructure/redis/client.ts` builds an `ioredis` client.
+
+`RedisLuaSwipeMatchAdapter`:
+- Key per pair: `swipe:<low>:<high>` — a hash with two fields, `low` and `high`, holding directional decisions.
+- Atomic via embedded Lua script over `EVAL`. Server-side, the script HSETs the swiper's side and HGETs the inverse side in one uninterruptible block.
+- No CAS, no locks. Atomicity comes from Redis being single-threaded — the script literally cannot interleave with anything else.
+
+Performance: same contract suite runs in **27ms** vs LWT's **398ms** on the concurrency case (~15× faster). The LWT does ~4 round-trips per write (Paxos: Prepare/Promise/Propose/Accept). The Lua script does 1 round-trip and runs entirely in-process on Redis's command thread.
+
+**Three mechanisms now compared on identical contract:**
+
+| Adapter | Atomicity mechanism | Class |
+|---|---|---|
+| cassandra-naive | (none — broken) | — |
+| cassandra-lwt | Distributed CAS via Paxos (`IF NOT EXISTS`) | Optimistic |
+| redis-lua | Single-thread script execution | Physical serialization |
+| (future) postgres-for-update | Row-level lock | Pessimistic |
+
 ## Current file tree
 
 ```
@@ -89,8 +109,10 @@ Passes the concurrency contract: every reciprocal pair detected. Reports 1–2 m
     │   └── ports/
     │       └── swipe-match-port.ts
     ├── infrastructure/
-    │   └── cassandra/
-    │       ├── bootstrap.ts        ← swipes + swipe_pairs
+    │   ├── cassandra/
+    │   │   ├── bootstrap.ts        ← swipes + swipe_pairs
+    │   │   └── client.ts
+    │   └── redis/
     │       └── client.ts
     └── adapters/
         └── outbound/
@@ -99,40 +121,41 @@ Passes the concurrency contract: every reciprocal pair detected. Reports 1–2 m
                 ├── cassandra-naive.ts
                 ├── cassandra-naive.test.ts
                 ├── cassandra-lwt.ts
-                └── cassandra-lwt.test.ts
+                ├── cassandra-lwt.test.ts
+                ├── redis-lua.ts
+                └── redis-lua.test.ts
 ```
 
 ## Test report (current)
 
 ```
 ✓ src/domain/match-rule.test.ts                 (8 tests, 2ms)
-✓ .../cassandra-naive.test.ts                   (3 tests, 255ms)  ← concurrency = it.fails
-✓ .../cassandra-lwt.test.ts                     (3 tests, 396ms)
-Test Files  3 passed
-Tests       14 passed
+✓ .../cassandra-naive.test.ts                   (3 tests, 225ms)  ← concurrency = it.fails
+✓ .../cassandra-lwt.test.ts                     (3 tests, 398ms)
+✓ .../redis-lua.test.ts                         (3 tests, 27ms)
+Test Files  4 passed
+Tests       17 passed
 ```
 
-## Next: Increment 6 — Redis-Lua adapter
+## Next: Increment 7 — `FeedPort` with PostGIS
 
-Goal: third adapter on the same contract, using a single atomic Lua script instead of distributed consensus.
+Pivot from atomicity exploration to the geospatial side of the article. The feed answers: **"given a user's location and preferences, return N candidate profiles ordered by distance."**
 
-Mechanism: Redis is single-threaded; a Lua script runs to completion without interleaving. The script does GET-inverse + SET-this-swipe + return whether a match was triggered, all atomically. No Paxos, no SERIAL — just "the server has one foot."
-
-Tradeoffs we'll feel:
-- Latency: ~1 round-trip vs LWT's ~4
-- Single point of contention vs distributed quorum
-- Durability story is different (AOF vs Cassandra commit log + replicas)
+First adapter: PostGIS. Use a geographic index (`GIST` on a `geography(Point)` column) to make `ST_DWithin` and `ST_Distance` cheap. Schema needs a `users` table with location + filter attributes (gender, age, etc., minimal for now).
 
 Plan:
-1. Add Redis service to `docker-compose.yml`
-2. `infrastructure/redis/client.ts`
-3. `adapters/outbound/swipe-match/redis-lua.ts` — embedded Lua script via `EVAL`/`EVALSHA`
-4. `redis-lua.test.ts` — thin caller of the existing contract
+1. Add Postgres+PostGIS service to `docker-compose.yml`
+2. `infrastructure/postgres/{client,bootstrap}.ts` — connection + schema (PostGIS extension + users table)
+3. Domain types: `UserProfile`, `FeedQuery { lat, lng, radiusKm, limit, ... }`, `FeedPort`
+4. `adapters/outbound/feed/postgres-postgis.ts` — `ST_DWithin(...)` + ORDER BY `ST_Distance(...)`
+5. Contract: small fixed dataset, assert ordering by distance, exclusion of out-of-radius profiles
+6. Later: Elasticsearch as second adapter, feel the latency tradeoffs (and the "denormalize for read" story)
 
 ## Open questions / things to revisit
 
-- **LWT cost.** ~4 round-trips per write. For high-frequency operations this is too expensive. The next adapter (Redis Lua) gives ~1 round-trip atomicity at the cost of single-process scalability.
-- **Duplicate match detection on LWT.** Concurrent reciprocal swipes can both return `{matched}`. Acceptable here because notifications de-dupe downstream. If we ever wire a synchronous "this is the moment of match" event, only the second writer should fire it — would need an additional LWT to claim the match record.
-- **Per-user read pattern lost on `swipe_pairs`.** Partitioning by canonical pair makes "show me everyone A swiped" expensive. In production we'd write to both `swipes` (by user) and `swipe_pairs` (by pair). Defer until we need the read.
-- **Test isolation strategy.** Currently TRUNCATE between tests. Per-test keyspaces if we ever parallelize integration test files.
+- **Duplicate match detection on LWT and Redis-Lua.** Concurrent reciprocal swipes can both return `{matched}`. Acceptable here because notifications de-dupe downstream. If we ever wire a synchronous "this is the moment of match" event, only the second writer should fire it — would need a claim mechanism.
+- **Per-user read pattern lost on `swipe_pairs` / Redis hash keys.** Atomicity-friendly partitioning makes "show me everyone A swiped" expensive. In production we'd dual-write to a per-user index. Defer until we need the read.
+- **Redis durability not characterized.** Default `appendfsync everysec` can lose up to 1s of writes on crash. For learning we don't care; for production we'd pair Redis with a durable log (Kafka / commit log replay).
+- **Test isolation strategy.** Currently TRUNCATE / FLUSHDB between tests. Per-test namespaces if we ever parallelize integration test files.
 - **No application/use-case layer yet.** Adapters inline orchestration (read → write → decide). Atomicity has to live in the adapter (otherwise we can't compose LWT/Lua atomic ops), so when we add a use case it stays thin.
+- **Postgres-FOR-UPDATE adapter deferred.** We've already covered the three atomicity classes (CAS, single-thread, lock) by name; building the fourth concretely is rounding-out, not new ground. Revisit if we want a tidy quartet.
