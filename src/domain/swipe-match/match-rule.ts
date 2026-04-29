@@ -1,5 +1,6 @@
-import type { SwipeResult } from './ports/swipe-match-port'
-import type { Swipe, SwipeDecision, UserId } from './types'
+import type { UserId } from '../shared/types'
+import type { SwipeResult } from './swipe-match-port'
+import type { Swipe, SwipeDecision } from './types'
 
 export function evaluateSwipe(
   swipe: Swipe,

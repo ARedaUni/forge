@@ -1,12 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import type { FeedPort } from '../../../domain/ports/feed-port'
-import {
-  UserIdSchema,
-  type Location,
-  type UserId,
-  type UserProfile,
-} from '../../../domain/types'
+import type { FeedPort } from '../../../domain/feed/feed-port'
+import type { Location, UserProfile } from '../../../domain/feed/types'
+import { UserIdSchema, type UserId } from '../../../domain/shared/types'
 
 const userId = (): UserId => UserIdSchema.parse(randomUUID())
 

@@ -1,4 +1,4 @@
-import type { Match, Swipe } from '../types'
+import type { Match, Swipe } from './types'
 
 export type SwipeResult =
   | { kind: 'recorded' }

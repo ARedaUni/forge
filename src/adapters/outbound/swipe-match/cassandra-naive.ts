@@ -1,7 +1,7 @@
 import type { Client } from 'cassandra-driver'
-import { evaluateSwipe } from '../../../domain/match-rule'
-import type { SwipeMatchPort, SwipeResult } from '../../../domain/ports/swipe-match-port'
-import { SwipeDecisionSchema, type Swipe, type SwipeDecision } from '../../../domain/types'
+import { evaluateSwipe } from '../../../domain/swipe-match/match-rule'
+import type { SwipeMatchPort, SwipeResult } from '../../../domain/swipe-match/swipe-match-port'
+import { SwipeDecisionSchema, type Swipe, type SwipeDecision } from '../../../domain/swipe-match/types'
 import { KEYSPACE } from '../../../infrastructure/cassandra/bootstrap'
 
 const SELECT_INVERSE = `
