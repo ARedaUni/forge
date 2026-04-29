@@ -283,6 +283,45 @@ curl POST /feed again   → 3 candidates (the swiped one filtered out)
 
 **Scripts added:** `pnpm dev` (tsx watch), `pnpm start`. All 58 tests still pass.
 
+### ✅ Increment 12 — `MatchPort` + matches-by-user read model (CQRS)
+
+Hello Interview's core entities are `User / Swipe / Match`. We *detected* matches in `SwipeMatchPort` but had no way to **list** a user's matches — the data lived in `swipe_pairs` (canonical-pair partition) where the per-user read is expensive. The textbook fix: split write-model from read-model.
+
+**Domain:**
+- `domain/match/match-port.ts` — `recordMatch(a, b, at)` (idempotent on duplicate detection) + `listForUser(userId, {limit?, before?}): MatchEntry[]`. New bounded context, separate from `swipe-match`.
+
+**Use-case wiring:**
+- `RecordSwipeUseCase` now calls `matchPort.recordMatch(...)` only when `SwipeMatchPort` returns `{kind: "matched"}`. Two new tests: records on matched, no-op on recorded.
+
+**Two adapters, same contract:**
+
+| Adapter | Mechanism | Idempotency |
+|---|---|---|
+| `postgres` | `matches (user_id, other_user_id, matched_at)` PK + `(user_id, matched_at DESC)` index. Two rows per match in one INSERT. | `ON CONFLICT (user_id, other_user_id) DO NOTHING` — first matched_at wins |
+| `redis-zset` | One sorted set per user (`matches:<user>`), score=epoch_ms, member=other_user. | `ZADD ... NX` — same semantic, one round-trip per side |
+
+**Why two rows per match:** the read pattern is "all *my* matches, newest first." Each user gets their own partition-local row → `WHERE user_id = $1 ORDER BY matched_at DESC LIMIT N` with the composite index. The price is dual-write; idempotency on duplicate detection (LWT/Lua can both return `{matched}` on concurrent reciprocal swipes) makes that price free.
+
+**Cursor pagination:** `before: Date` exclusive cursor. Postgres: `AND matched_at < $2`. Redis: `(score` exclusive bound on `ZREVRANGEBYSCORE`. Same contract test passes both.
+
+**Contract `runMatchContract`** asserts 7 invariants — empty list, two-sided record, idempotency on duplicate pair, newest-first ordering, per-user isolation, limit cap, before-cursor exclusivity.
+
+**HTTP:** `GET /matches?userId=<uuid>&limit=<n>&before=<iso>`. Wired to `PostgresMatchAdapter` in composition root. End-to-end demo:
+```
+POST /profiles ×3 (alice, bob, carl)
+POST /swipes alice→bob yes        → {recorded}
+POST /swipes bob→alice yes        → {matched}
+GET  /matches?userId=alice         → [{otherUserId: bob, matchedAt}]
+GET  /matches?userId=bob           → [{otherUserId: alice, matchedAt}]   ← two-sided
+GET  /matches?userId=carl          → []                                   ← isolation
+POST /swipes alice→carl no, carl→alice yes
+GET  /matches?userId=alice         → still just bob (no = no match)
+```
+
+**Result:** 74 tests across 12 files. Postgres contract ~100ms, Redis-zset contract ~18ms — same head-to-head pattern as redis-lua vs cassandra-lwt.
+
+**Architecture note:** the `userRepo` precedent (port wired directly into HTTP without a use-case wrapper) extends to `matchPort` — listing matches is a pure pass-through right now. When filtering logic appears (block-list intersect, last-active filter), promote to `ListMatchesUseCase`.
+
 ## Next: open
 
 Now that the app runs end-to-end, natural next moves:

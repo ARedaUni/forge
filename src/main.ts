@@ -1,5 +1,6 @@
 import { createServer } from './adapters/inbound/http/server'
 import { PostgresPostGisFeedAdapter } from './adapters/outbound/feed/postgres-postgis'
+import { PostgresMatchAdapter } from './adapters/outbound/match/postgres'
 import { RedisBloomSeenFilterAdapter } from './adapters/outbound/seen-filter/redis-bloom'
 import { RedisLuaSwipeMatchAdapter } from './adapters/outbound/swipe-match/redis-lua'
 import { PostgresUserRepositoryAdapter } from './adapters/outbound/user-repository/postgres'
@@ -18,6 +19,7 @@ async function main(): Promise<void> {
 
   const feedPort = new PostgresPostGisFeedAdapter(pool)
   const userRepo = new PostgresUserRepositoryAdapter(pool)
+  const matchPort = new PostgresMatchAdapter(pool)
   const seenFilter = new RedisBloomSeenFilterAdapter(redis, {
     capacity: 10000,
     errorRate: 0.01,
@@ -25,9 +27,9 @@ async function main(): Promise<void> {
   const swipeMatch = new RedisLuaSwipeMatchAdapter(redis)
 
   const getFeed = new GetFeedUseCase(feedPort, seenFilter)
-  const recordSwipe = new RecordSwipeUseCase(swipeMatch, seenFilter)
+  const recordSwipe = new RecordSwipeUseCase(swipeMatch, seenFilter, matchPort)
 
-  const server = createServer({ getFeed, recordSwipe, userRepo })
+  const server = createServer({ getFeed, recordSwipe, userRepo, matchPort })
 
   const port = Number(process.env['PORT'] ?? 3000)
   await server.listen({ port, host: '127.0.0.1' })

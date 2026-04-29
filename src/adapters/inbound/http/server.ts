@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { LocationSchema, UserProfileSchema } from '../../../domain/feed/types'
 import type { UserRepositoryPort } from '../../../domain/feed/user-repository-port'
+import type { MatchPort } from '../../../domain/match/match-port'
 import { UserIdSchema } from '../../../domain/shared/types'
 import { SwipeDecisionSchema } from '../../../domain/swipe-match/types'
 import type { GetFeedUseCase } from '../../../use-cases/get-feed'
@@ -20,10 +21,17 @@ const SwipeRequestSchema = z.object({
   decision: SwipeDecisionSchema,
 })
 
+const ListMatchesQuerySchema = z.object({
+  userId: UserIdSchema,
+  limit: z.coerce.number().int().positive().max(200).optional(),
+  before: z.coerce.date().optional(),
+})
+
 export type HttpDeps = {
   getFeed: GetFeedUseCase
   recordSwipe: RecordSwipeUseCase
   userRepo: UserRepositoryPort
+  matchPort: MatchPort
 }
 
 export function createServer(deps: HttpDeps): FastifyInstance {
@@ -58,6 +66,15 @@ export function createServer(deps: HttpDeps): FastifyInstance {
       createdAt: new Date(),
     })
     return result
+  })
+
+  app.get('/matches', async (req) => {
+    const { userId, limit, before } = ListMatchesQuerySchema.parse(req.query)
+    const options: { limit?: number; before?: Date } = {}
+    if (limit !== undefined) options.limit = limit
+    if (before !== undefined) options.before = before
+    const matches = await deps.matchPort.listForUser(userId, options)
+    return { matches }
   })
 
   return app

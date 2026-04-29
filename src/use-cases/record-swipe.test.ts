@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { MatchPort } from '../domain/match/match-port'
 import type { SeenFilterPort } from '../domain/seen-filter/seen-filter-port'
 import { UserIdSchema, type UserId } from '../domain/shared/types'
 import type {
@@ -31,6 +32,16 @@ class InMemorySeenFilter implements SeenFilterPort {
   }
 }
 
+class StubMatchPort implements MatchPort {
+  public records: Array<{ userA: UserId; userB: UserId; matchedAt: Date }> = []
+  async recordMatch(userA: UserId, userB: UserId, matchedAt: Date): Promise<void> {
+    this.records.push({ userA, userB, matchedAt })
+  }
+  async listForUser(): Promise<never[]> {
+    return []
+  }
+}
+
 const makeSwipe = (overrides: Partial<Swipe> = {}): Swipe => ({
   swiperId: SWIPER,
   targetId: TARGET,
@@ -39,10 +50,19 @@ const makeSwipe = (overrides: Partial<Swipe> = {}): Swipe => ({
   ...overrides,
 })
 
+const matchedResult: SwipeResult = {
+  kind: 'matched',
+  match: { userAId: SWIPER, userBId: TARGET, matchedAt: SWIPED_AT },
+}
+
 describe('RecordSwipeUseCase', () => {
   it('forwards the swipe to SwipeMatchPort', async () => {
     const swipePort = new StubSwipeMatchPort({ kind: 'recorded' })
-    const useCase = new RecordSwipeUseCase(swipePort, new InMemorySeenFilter())
+    const useCase = new RecordSwipeUseCase(
+      swipePort,
+      new InMemorySeenFilter(),
+      new StubMatchPort(),
+    )
     const swipe = makeSwipe()
 
     await useCase.execute(swipe)
@@ -51,18 +71,15 @@ describe('RecordSwipeUseCase', () => {
   })
 
   it('returns the SwipeResult from the port', async () => {
-    const result: SwipeResult = {
-      kind: 'matched',
-      match: { userAId: SWIPER, userBId: TARGET, matchedAt: SWIPED_AT },
-    }
     const useCase = new RecordSwipeUseCase(
-      new StubSwipeMatchPort(result),
+      new StubSwipeMatchPort(matchedResult),
       new InMemorySeenFilter(),
+      new StubMatchPort(),
     )
 
     const out = await useCase.execute(makeSwipe())
 
-    expect(out).toEqual(result)
+    expect(out).toEqual(matchedResult)
   })
 
   it("marks the target as seen by the swiper (so they won't appear in future feeds)", async () => {
@@ -70,6 +87,7 @@ describe('RecordSwipeUseCase', () => {
     const useCase = new RecordSwipeUseCase(
       new StubSwipeMatchPort({ kind: 'recorded' }),
       seenFilter,
+      new StubMatchPort(),
     )
 
     await useCase.execute(makeSwipe())
@@ -82,6 +100,7 @@ describe('RecordSwipeUseCase', () => {
     const useCase = new RecordSwipeUseCase(
       new StubSwipeMatchPort({ kind: 'recorded' }),
       seenFilter,
+      new StubMatchPort(),
     )
 
     await useCase.execute(makeSwipe({ decision: 'no' }))
@@ -92,15 +111,41 @@ describe('RecordSwipeUseCase', () => {
   it('does not mark the swiper as seen by the target (one-directional)', async () => {
     const seenFilter = new InMemorySeenFilter()
     const useCase = new RecordSwipeUseCase(
-      new StubSwipeMatchPort({
-        kind: 'matched',
-        match: { userAId: SWIPER, userBId: TARGET, matchedAt: SWIPED_AT },
-      }),
+      new StubSwipeMatchPort(matchedResult),
       seenFilter,
+      new StubMatchPort(),
     )
 
     await useCase.execute(makeSwipe())
 
     expect(seenFilter.adds).toEqual([{ userId: SWIPER, candidateId: TARGET }])
+  })
+
+  it('records the match on MatchPort when result is matched', async () => {
+    const matchPort = new StubMatchPort()
+    const useCase = new RecordSwipeUseCase(
+      new StubSwipeMatchPort(matchedResult),
+      new InMemorySeenFilter(),
+      matchPort,
+    )
+
+    await useCase.execute(makeSwipe())
+
+    expect(matchPort.records).toEqual([
+      { userA: SWIPER, userB: TARGET, matchedAt: SWIPED_AT },
+    ])
+  })
+
+  it('does not record on MatchPort when result is recorded (no match)', async () => {
+    const matchPort = new StubMatchPort()
+    const useCase = new RecordSwipeUseCase(
+      new StubSwipeMatchPort({ kind: 'recorded' }),
+      new InMemorySeenFilter(),
+      matchPort,
+    )
+
+    await useCase.execute(makeSwipe())
+
+    expect(matchPort.records).toEqual([])
   })
 })
