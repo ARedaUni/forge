@@ -32,8 +32,8 @@ Each interesting port has ≥2 adapters and a shared contract test suite.
 | Port | Adapters | Status |
 |---|---|---|
 | `SwipeMatchPort` | cassandra-naive (broken), cassandra-lwt, redis-lua, postgres-for-update | naive ✅, lwt ✅, redis-lua ✅, postgres deferred |
-| `FeedPort` | postgres-postgis, elasticsearch | next |
-| `SeenFilterPort` | client-cache simulation, redis-bloom | not yet |
+| `FeedPort` | postgres-postgis, elasticsearch | postgis ✅, elasticsearch next |
+| `SeenFilterPort` | redis-set (naive), redis-bloom | not yet |
 | `FeedCachePort` | none (live query), redis + cron warmer | not yet |
 
 ## Increments
@@ -91,12 +91,57 @@ Performance: same contract suite runs in **27ms** vs LWT's **398ms** on the conc
 | redis-lua | Single-thread script execution | Physical serialization |
 | (future) postgres-for-update | Row-level lock | Pessimistic |
 
+### ✅ Increment 7 — `FeedPort` with PostGIS (geospatial pivot)
+
+Hello Interview frames the feed as: *"Users can view a stack of potential matches in line with their preferences and within max distance of their current location"* with NFR *"low latency (e.g. < 300ms)."* Their proposed naive query (lat/long bounding box with B-tree indexes) is dismissed as "incredibly inefficient." We solve it properly with a GIST/R-tree index on a `geography(Point, 4326)` column.
+
+**Domain layer (pure):**
+- `UserProfile { id, age, gender, interestedIn[], ageRange{min,max}, location{lat,lng} }` and `FeedQuery { viewer, center, radiusKm, limit }` schemas (Zod) in `domain/types.ts`.
+- `domain/feed-rule.ts` — pure `matchesFilters(target, viewer)` predicate enforcing **mutual** gender and age filtering. 7 microsecond unit tests.
+- `domain/ports/feed-port.ts` — `FeedPort.query(q): Promise<FeedCandidate[]>`. Returns `{ profile, distanceKm }[]`.
+
+**Why mutual filters in the rule:** Hello Interview's sample SQL only filters one direction (`age BETWEEN 18 AND 35`). That's the *viewer's* filter on targets. The *target's* filter on the viewer is missing. The pure rule encodes both, so PostGIS + ES adapters must implement both.
+
+**Why `viewer` is a full profile, not a userId:** every adapter would otherwise have to fetch the viewer's row first — turning one query into two round-trips. Latency budget matters.
+
+**Why `center` is separate from `viewer.location`:** models Tinder's "Passport" feature without surgery.
+
+**Infrastructure:**
+- `postgis/postgis:16-3.4` in docker-compose, host port 5433 (5432 was taken).
+- `infrastructure/postgres/{client,bootstrap}.ts` — `pg.Pool` (max 10), `CREATE EXTENSION postgis`, `users` table with `geography(Point, 4326)` and `CREATE INDEX users_location_gist ON users USING GIST (location)`.
+- `interested_in TEXT[]` (Postgres array) for symmetric `= ANY(...)` filtering both directions. Age stored as `age_min`/`age_max` columns (not a range type — keep simple, refactor when needed).
+
+**The query (the load-bearing SQL):**
+```sql
+WITH center AS (
+  SELECT ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography AS pt
+)
+SELECT u.*, ST_Distance(u.location, c.pt) / 1000.0 AS distance_km
+FROM users u, center c
+WHERE ST_DWithin(u.location, c.pt, $3)         -- index-friendly radius predicate
+  AND u.gender = ANY($4)                       -- viewer's interestedIn ⊇ target.gender
+  AND $5 = ANY(u.interested_in)                -- target's interestedIn ⊇ viewer.gender
+  AND u.age BETWEEN $6 AND $7                  -- target.age ∈ viewer.ageRange
+  AND $8 BETWEEN u.age_min AND u.age_max       -- viewer.age ∈ target.ageRange
+  AND u.id <> $9                               -- self-exclusion
+ORDER BY ST_Distance(u.location, c.pt) ASC
+LIMIT $10
+```
+
+**Two architectural levers in play:**
+- *Index choice*: `ST_DWithin` decomposes into a bounding-box lookup on the GIST/R-tree, *then* exact distance recheck on the shortlist. `ST_Distance(...) <= radius` would not use the index — same answer, full scan. **Use `ST_DWithin` for radius, always.**
+- *Coordinate system*: `geography(POINT, 4326)` computes WGS84 great-circle distance (real km on the ellipsoid). `geometry` would do flat Euclidean — fast but wrong over long distances. Tradeoff: ~10% slower, correct.
+
+**Contract `runFeedContract`** asserts 10 properties: empty store, radius exclusion, distance ordering, mutual gender filter (both halves), mutual age filter (both halves), limit, self-exclusion, distanceKm accuracy (±0.05 km via `expect.closeTo`). The seed step is a per-adapter callable (FeedPort itself is read-only by design).
+
+**Result:** all 10 contract tests pass on first run, ~190ms. Full suite 34 tests across 6 files, 642ms.
+
 ## Current file tree
 
 ```
 .
-├── docker-compose.yml
-├── package.json
+├── docker-compose.yml                 ← + postgres on host:5433
+├── package.json                       ← + pg, @types/pg
 ├── pnpm-lock.yaml
 ├── tsconfig.json
 ├── vitest.config.ts
@@ -105,54 +150,65 @@ Performance: same contract suite runs in **27ms** vs LWT's **398ms** on the conc
     ├── domain/
     │   ├── match-rule.ts
     │   ├── match-rule.test.ts
-    │   ├── types.ts
+    │   ├── feed-rule.ts               ← pure mutual-filter predicate
+    │   ├── feed-rule.test.ts          ← 7 microsecond tests
+    │   ├── types.ts                   ← + UserProfile, Gender, Location, AgeRange
     │   └── ports/
-    │       └── swipe-match-port.ts
+    │       ├── swipe-match-port.ts
+    │       └── feed-port.ts           ← FeedPort, FeedQuery, FeedCandidate
     ├── infrastructure/
     │   ├── cassandra/
-    │   │   ├── bootstrap.ts        ← swipes + swipe_pairs
+    │   │   ├── bootstrap.ts
     │   │   └── client.ts
-    │   └── redis/
-    │       └── client.ts
+    │   ├── redis/
+    │   │   └── client.ts
+    │   └── postgres/
+    │       ├── bootstrap.ts           ← CREATE EXTENSION + users table + GIST
+    │       └── client.ts              ← pg.Pool factory
     └── adapters/
         └── outbound/
-            └── swipe-match/
-                ├── contract.ts
-                ├── cassandra-naive.ts
-                ├── cassandra-naive.test.ts
-                ├── cassandra-lwt.ts
-                ├── cassandra-lwt.test.ts
-                ├── redis-lua.ts
-                └── redis-lua.test.ts
+            ├── swipe-match/
+            │   ├── contract.ts
+            │   ├── cassandra-naive.ts
+            │   ├── cassandra-naive.test.ts
+            │   ├── cassandra-lwt.ts
+            │   ├── cassandra-lwt.test.ts
+            │   ├── redis-lua.ts
+            │   └── redis-lua.test.ts
+            └── feed/
+                ├── contract.ts        ← runFeedContract (10 tests)
+                ├── postgres-postgis.ts
+                └── postgres-postgis.test.ts
 ```
 
 ## Test report (current)
 
 ```
 ✓ src/domain/match-rule.test.ts                 (8 tests, 2ms)
-✓ .../cassandra-naive.test.ts                   (3 tests, 225ms)  ← concurrency = it.fails
-✓ .../cassandra-lwt.test.ts                     (3 tests, 398ms)
-✓ .../redis-lua.test.ts                         (3 tests, 27ms)
-Test Files  4 passed
-Tests       17 passed
+✓ src/domain/feed-rule.test.ts                  (7 tests, 2ms)
+✓ .../cassandra-naive.test.ts                   (3 tests, 237ms)  ← concurrency = it.fails
+✓ .../cassandra-lwt.test.ts                     (3 tests, 379ms)
+✓ .../redis-lua.test.ts                         (3 tests, 18ms)
+✓ .../feed/postgres-postgis.test.ts             (10 tests, 214ms)
+Test Files  6 passed
+Tests       34 passed
 ```
 
-## Next: Increment 7 — `FeedPort` with PostGIS
+## Next: Increment 8 — `SeenFilterPort` (exclude already-swiped profiles)
 
-Pivot from atomicity exploration to the geospatial side of the article. The feed answers: **"given a user's location and preferences, return N candidate profiles ordered by distance."**
-
-First adapter: PostGIS. Use a geographic index (`GIST` on a `geography(Point)` column) to make `ST_DWithin` and `ST_Distance` cheap. Schema needs a `users` table with location + filter attributes (gender, age, etc., minimal for now).
+Hello Interview NFR: *"avoid showing user profiles that the user has previously swiped on."* Deliberately deferred from Increment 7. This is where the [Redis deep dive](https://www.hellointerview.com/learn/system-design/deep-dives/redis) on data structures pays off — Bloom filter vs Set is the whole conversation (memory vs false-positive rate).
 
 Plan:
-1. Add Postgres+PostGIS service to `docker-compose.yml`
-2. `infrastructure/postgres/{client,bootstrap}.ts` — connection + schema (PostGIS extension + users table)
-3. Domain types: `UserProfile`, `FeedQuery { lat, lng, radiusKm, limit, ... }`, `FeedPort`
-4. `adapters/outbound/feed/postgres-postgis.ts` — `ST_DWithin(...)` + ORDER BY `ST_Distance(...)`
-5. Contract: small fixed dataset, assert ordering by distance, exclusion of out-of-radius profiles
-6. Later: Elasticsearch as second adapter, feel the latency tradeoffs (and the "denormalize for read" story)
+1. Domain: `SeenFilterPort.contains(userId, candidateIds): Promise<Set<UserId>>` (returns the *seen* subset; caller filters them out).
+2. `redis-set` adapter — exact, O(N) memory per user. Baseline.
+3. `redis-bloom` adapter (RedisBloom module, `BF.ADD`/`BF.MEXISTS`) — fixed memory, configurable false-positive rate. Same contract.
+4. Contract test: never returns false negatives; bloom adapter may return false positives, document this as a `knownLossy` flag and assert false-positive rate stays under configured budget over a 10k-element sample.
+5. Later increment 9: compose `FeedPort` + `SeenFilterPort` in a use case. Then build `FeedCachePort` for pre-computation (HI's "Great" hybrid).
 
 ## Open questions / things to revisit
 
+- **Profile writes have no port yet.** `insertProfile` is a free function exported from the PostGIS adapter purely to seed contract tests. Real registration/profile-update flows will need a `UserRepositoryPort` so the FeedPort doesn't accidentally absorb writes.
+- **No filter on the GIST index.** GIST is on `location` only. The `gender = ANY(...)` and age predicates are filtered after the index lookup. For uniform geographic density this is fine; for skewed cases (e.g. Manhattan, where 99% match within 1km) we'd want partial indexes or a multi-column index. Revisit if we ever measure the planner spending time on the recheck.
 - **Duplicate match detection on LWT and Redis-Lua.** Concurrent reciprocal swipes can both return `{matched}`. Acceptable here because notifications de-dupe downstream. If we ever wire a synchronous "this is the moment of match" event, only the second writer should fire it — would need a claim mechanism.
 - **Per-user read pattern lost on `swipe_pairs` / Redis hash keys.** Atomicity-friendly partitioning makes "show me everyone A swiped" expensive. In production we'd dual-write to a per-user index. Defer until we need the read.
 - **Redis durability not characterized.** Default `appendfsync everysec` can lose up to 1s of writes on crash. For learning we don't care; for production we'd pair Redis with a durable log (Kafka / commit log replay).
