@@ -257,21 +257,46 @@ async execute(swipe) {
 
 58 tests across 10 files, 766ms.
 
-## Next: Increment 11 candidates
+### ✅ Increment 11 — Wire it up: HTTP + composition root
 
-Pick one (or vote):
+After 10 increments of building ports/adapters/use cases in isolation, this increment turns the project into a **runnable app**. Pivot from FeedCachePort (which would have been more abstraction): cache is a *decorator over FeedPort*, not a new domain — we'd add it as a wrapper adapter when the latency budget actually demands it.
 
-**A. `FeedCachePort` (HI's "Great" tier).** Pre-compute each user's feed asynchronously into Redis (sorted set), serve from cache; recompute on cron / on profile change. Domain port: `FeedCachePort.get(userId): Promise<FeedCandidate[] | null>`. Adapters: `none` (live-only) and `redis-zset`. Use case picks cache first, falls back to live. **Highest learning density** (cache invalidation, write amplification, staleness budget).
+**New pieces:**
+- `domain/feed/user-repository-port.ts` — `UserRepositoryPort.upsert(profile)`. Profile writes finally have a port. Stayed under `domain/feed/` because feed is the only context that uses `UserProfile`; "user-profile" isn't really a domain (no rules, no invariants — just data shape).
+- `adapters/outbound/user-repository/postgres.ts` — wraps the existing `insertProfile` SQL.
+- `adapters/inbound/http/server.ts` — first **driving** adapter. Fastify with Zod-validated routes:
+  - `GET /health`
+  - `POST /profiles` — upsert via `UserRepositoryPort`
+  - `POST /feed` — call `GetFeedUseCase`
+  - `POST /swipes` — call `RecordSwipeUseCase` (server stamps `createdAt`)
+- `src/main.ts` — composition root. Constructs Postgres pool + Redis client, bootstraps schemas, wires adapters into use cases, boots Fastify with graceful shutdown.
 
-**B. Inbound HTTP layer.** First *driving* adapter. Express/Fastify handlers calling the use cases. Now the project actually *runs*. Adds: routing, request parsing (Zod), auth-stub, error mapping. Lower system-design value but converts the project from a library into an app.
+**Adapters wired:** PostGIS for FeedPort, Redis-Bloom for SeenFilterPort, Redis-Lua for SwipeMatchPort, Postgres for UserRepositoryPort. Cassandra adapters remain available but unwired (still tested in CI).
 
-**C. Elasticsearch FeedPort (second adapter).** Prove the contract pattern by swapping PostGIS for ES. Forces the FeedPort to be honestly storage-agnostic; surfaces what ES wins (text search, weighted scoring) vs what PostGIS wins (geo accuracy, ACID). Less novel mechanically — same contract, different store.
+**Demonstrated end-to-end:**
+```
+curl POST /profiles ×4   → users created in Postgres
+curl POST /feed         → 4 candidates ordered by distanceKm
+curl POST /swipes (yes) → recorded; bloom filter remembers
+curl POST /feed again   → 3 candidates (the swiped one filtered out)
+```
 
-**D. `UserRepositoryPort` and profile lifecycle.** Address the "profile writes have no port" open question. Required before HTTP because new-user signup needs a write path other than test seed.
+**Scripts added:** `pnpm dev` (tsx watch), `pnpm start`. All 58 tests still pass.
+
+## Next: open
+
+Now that the app runs end-to-end, natural next moves:
+
+- **Mutual swipe → match notification flow.** Currently `{kind: "matched"}` returns to the swiper but the *target* learns nothing in real-time. Needs an outbound NotificationPort + WebSocket inbound or polling.
+- **Auth.** Currently every request trusts client-supplied `viewerId`/`swiperId`. Bare-minimum: a middleware that maps a JWT/session header → `UserId`.
+- **FeedCachePort as decorator.** Once we have load to justify it, wrap `PostgresPostGisFeedAdapter` in a `CachedFeedAdapter implements FeedPort` (no new domain port).
+- **ES second FeedPort** — prove the contract by swapping storage.
+- **Cassandra path wired.** We have the adapters; never use them at runtime. Could make `SwipeMatchPort` impl env-configurable.
 
 ## Open questions / things to revisit
 
-- **Profile writes have no port yet.** `insertProfile` is a free function exported from the PostGIS adapter purely to seed contract tests. Real registration/profile-update flows will need a `UserRepositoryPort` so the FeedPort doesn't accidentally absorb writes.
+- **HTTP layer has no integration tests.** Unit tests of routes via `app.inject()` would be cheap (Fastify supports it natively) — defer until the route surface stabilizes.
+- **No auth.** All endpoints trust client-supplied user IDs. Need a JWT or session-cookie middleware before this is usable beyond local demos.
 - **No filter on the GIST index.** GIST is on `location` only. The `gender = ANY(...)` and age predicates are filtered after the index lookup. For uniform geographic density this is fine; for skewed cases (e.g. Manhattan, where 99% match within 1km) we'd want partial indexes or a multi-column index. Revisit if we ever measure the planner spending time on the recheck.
 - **Duplicate match detection on LWT and Redis-Lua.** Concurrent reciprocal swipes can both return `{matched}`. Acceptable here because notifications de-dupe downstream. If we ever wire a synchronous "this is the moment of match" event, only the second writer should fire it — would need a claim mechanism.
 - **Per-user read pattern lost on `swipe_pairs` / Redis hash keys.** Atomicity-friendly partitioning makes "show me everyone A swiped" expensive. In production we'd dual-write to a per-user index. Defer until we need the read.
