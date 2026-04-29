@@ -218,15 +218,56 @@ Hello Interview NFR: *"avoid showing user profiles that the user has previously 
 
 **Result:** 47 tests across 8 files, 673ms. Redis-set 7/7, Redis-bloom 6/6 (skips false-positive prohibition by design).
 
-## Next: Increment 9 — Compose `FeedPort` + `SeenFilterPort` in a use case
+### ✅ Increment 9 — `GetFeedUseCase`
 
-The first true *application layer* work. Until now every adapter was used directly by tests; now we need orchestration of two ports for the canonical "give me my feed" flow.
+First application-layer work. `src/use-cases/get-feed.ts`:
 
-Plan:
-1. `application/get-feed.ts` — `GetFeedUseCase(feedPort, seenFilterPort)`. Calls `feedPort.query(...)`, then `seenFilterPort.contains(viewer.id, candidates.map(c => c.id))`, then filters out the seen subset.
-2. Tests use **in-memory fakes** that satisfy the port contracts — microsecond tests, no DBs.
-3. Demonstrates: orchestration logic decoupled from storage. Swap PostGIS for ES, swap Set for Bloom — use case unchanged.
-4. Later increment 10: `RecordSwipeUseCase` composing SwipeMatchPort + SeenFilterPort.add. After that, FeedCachePort (HI's "Great" tier).
+```ts
+async execute({ viewer, center, radiusKm, limit }) {
+  const candidates = await feedPort.query({...})
+  if (candidates.length === 0) return []                    // skip Redis round-trip
+  const seen = await seenFilter.contains(viewer.id, candidates.map(c => c.profile.id))
+  return candidates.filter(c => !seen.has(c.profile.id))
+}
+```
+
+6 tests in 3ms using in-memory `FeedPort` / `SeenFilterPort` fakes. By transitivity through the port contracts, this is correct against any adapter pair (PostGIS+Set, PostGIS+Bloom, future-ES+Bloom, etc).
+
+### ✅ Increment 10 — `RecordSwipeUseCase`
+
+`src/use-cases/record-swipe.ts`:
+
+```ts
+async execute(swipe) {
+  const result = await swipeMatch.recordSwipe(swipe)
+  await seenFilter.add(swipe.swiperId, swipe.targetId)   // future feeds skip them
+  return result
+}
+```
+
+5 tests in 7ms. Marks target seen on yes *and* no — both decisions exhaust the candidate. One-directional (swiper not added to target's seen set; if the target hasn't swiped on the swiper yet, they should still see them).
+
+**Pyramid is now visible:**
+
+| Layer | Tests | Time |
+|---|---|---|
+| Domain (pure) | 15 | 5ms |
+| Use case (in-memory fakes) | 11 | 10ms |
+| Adapter contracts (real DBs) | 32 | ~700ms |
+
+58 tests across 10 files, 766ms.
+
+## Next: Increment 11 candidates
+
+Pick one (or vote):
+
+**A. `FeedCachePort` (HI's "Great" tier).** Pre-compute each user's feed asynchronously into Redis (sorted set), serve from cache; recompute on cron / on profile change. Domain port: `FeedCachePort.get(userId): Promise<FeedCandidate[] | null>`. Adapters: `none` (live-only) and `redis-zset`. Use case picks cache first, falls back to live. **Highest learning density** (cache invalidation, write amplification, staleness budget).
+
+**B. Inbound HTTP layer.** First *driving* adapter. Express/Fastify handlers calling the use cases. Now the project actually *runs*. Adds: routing, request parsing (Zod), auth-stub, error mapping. Lower system-design value but converts the project from a library into an app.
+
+**C. Elasticsearch FeedPort (second adapter).** Prove the contract pattern by swapping PostGIS for ES. Forces the FeedPort to be honestly storage-agnostic; surfaces what ES wins (text search, weighted scoring) vs what PostGIS wins (geo accuracy, ACID). Less novel mechanically — same contract, different store.
+
+**D. `UserRepositoryPort` and profile lifecycle.** Address the "profile writes have no port" open question. Required before HTTP because new-user signup needs a write path other than test seed.
 
 ## Open questions / things to revisit
 
@@ -235,5 +276,6 @@ Plan:
 - **Duplicate match detection on LWT and Redis-Lua.** Concurrent reciprocal swipes can both return `{matched}`. Acceptable here because notifications de-dupe downstream. If we ever wire a synchronous "this is the moment of match" event, only the second writer should fire it — would need a claim mechanism.
 - **Per-user read pattern lost on `swipe_pairs` / Redis hash keys.** Atomicity-friendly partitioning makes "show me everyone A swiped" expensive. In production we'd dual-write to a per-user index. Defer until we need the read.
 - **Redis durability not characterized.** Default `appendfsync everysec` can lose up to 1s of writes on crash. For learning we don't care; for production we'd pair Redis with a durable log (Kafka / commit log replay).
-- **No application/use-case layer yet.** Adapters inline orchestration (read → write → decide). Atomicity has to live in the adapter (otherwise we can't compose LWT/Lua atomic ops), so when we add a use case it stays thin.
+- **Partial-failure semantics in `RecordSwipeUseCase`.** If `swipeMatch.recordSwipe` succeeds but `seenFilter.add` fails, the swipe is durable but the seen set hasn't been updated → user might see this profile again. Acceptable because seen-filter is best-effort (bloom already has FPs); a real fix is outbox/event-driven add. Document; don't fix yet.
+- **`GetFeedUseCase` doesn't over-fetch.** Asking FeedPort for `limit=N` then filtering seen can return fewer than N. In production we'd request `limit * (1 + seenRate)` or paginate. Defer until we measure starvation.
 - **Postgres-FOR-UPDATE adapter deferred.** We've already covered the three atomicity classes (CAS, single-thread, lock) by name; building the fourth concretely is rounding-out, not new ground. Revisit if we want a tidy quartet.
