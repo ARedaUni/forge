@@ -1,4 +1,4 @@
-import type { UserProfile } from './types'
+import type { UserProfile } from '../user/types'
 
 export function matchesFilters(target: UserProfile, viewer: UserProfile): boolean {
   if (!viewer.interestedIn.includes(target.gender)) return false

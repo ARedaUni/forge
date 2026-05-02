@@ -1,6 +1,6 @@
 import { createRedisClient } from '../../../infrastructure/redis/client'
 import { runMatchContract } from './contract'
-import { RedisZsetMatchAdapter } from './redisZset'
+import { RedisZsetMatchAdapter } from './redisZset-inactive'
 
 runMatchContract({
   name: 'redis-zset',

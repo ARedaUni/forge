@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { matchesFilters } from './feedRule'
 import { UserIdSchema } from '../shared/types'
-import type { UserProfile } from './types'
+import type { UserProfile } from '../user/types'
 
 const profile = (overrides: Partial<UserProfile> = {}): UserProfile => ({
   id: UserIdSchema.parse(randomUUID()),

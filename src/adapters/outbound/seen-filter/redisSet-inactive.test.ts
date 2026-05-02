@@ -1,6 +1,6 @@
 import { createRedisClient } from '../../../infrastructure/redis/client'
 import { runSeenFilterContract } from './contract'
-import { RedisSetSeenFilterAdapter } from './redisSet'
+import { RedisSetSeenFilterAdapter } from './redisSet-inactive'
 
 runSeenFilterContract({
   name: 'redis-set',

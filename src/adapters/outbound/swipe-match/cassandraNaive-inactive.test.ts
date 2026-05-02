@@ -1,6 +1,6 @@
 import { createCassandraClient } from '../../../infrastructure/cassandra/client'
 import { KEYSPACE, bootstrapSchema } from '../../../infrastructure/cassandra/bootstrap'
-import { CassandraNaiveSwipeMatchAdapter } from './cassandraNaive'
+import { CassandraNaiveSwipeMatchAdapter } from './cassandraNaive-inactive'
 import { runSwipeMatchContract } from './contract'
 
 runSwipeMatchContract({
