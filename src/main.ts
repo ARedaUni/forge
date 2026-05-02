@@ -1,4 +1,5 @@
 import { createServer } from './adapters/inbound/http/server'
+import { JwtAuthAdapter } from './adapters/outbound/auth/jwt'
 import { PostgresPostGisFeedAdapter } from './adapters/outbound/feed/postgresPostgis'
 import { PostgresMatchAdapter } from './adapters/outbound/match/postgres'
 import { RedisBloomSeenFilterAdapter } from './adapters/outbound/seen-filter/redisBloom'
@@ -34,8 +35,11 @@ async function main(): Promise<void> {
 
   const getFeed = new GetFeedUseCase(feedPort, seenFilter)
   const recordSwipe = new RecordSwipeUseCase(swipeMatch, seenFilter, matchPort)
+  const authPort = new JwtAuthAdapter({
+    secret: process.env['JWT_SECRET'] ?? 'change-me-in-production',
+  })
 
-  const server = createServer({ getFeed, recordSwipe, userRepo, matchPort })
+  const server = createServer({ getFeed, recordSwipe, userRepo, matchPort, authPort })
 
   const port = Number(process.env['PORT'] ?? 3000)
   await server.listen({ port, host: '127.0.0.1' })

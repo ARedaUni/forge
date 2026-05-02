@@ -1,5 +1,6 @@
-import Fastify, { type FastifyInstance } from 'fastify'
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify'
 import { z } from 'zod'
+import { AuthError, type AuthPort } from '../../../domain/auth/port'
 import { LocationSchema, UserProfileSchema } from '../../../domain/feed/types'
 import type { MatchPort } from '../../../domain/match/port'
 import { UserIdSchema } from '../../../domain/shared/types'
@@ -27,15 +28,49 @@ const ListMatchesQuerySchema = z.object({
   before: z.coerce.date().optional(),
 })
 
+const IssueTokenRequestSchema = z.object({
+  userId: UserIdSchema,
+})
+
 export type HttpDeps = {
   getFeed: GetFeedUseCase
   recordSwipe: RecordSwipeUseCase
   userRepo: UserRepositoryPort
   matchPort: MatchPort
+  authPort: AuthPort
+}
+
+const PUBLIC_ROUTES = new Set(['/health', '/auth/token'])
+
+async function authMiddleware(
+  authPort: AuthPort,
+  req: FastifyRequest,
+  reply: FastifyReply,
+): Promise<void> {
+  if (PUBLIC_ROUTES.has(req.routeOptions.url ?? '')) return
+
+  const header = req.headers['authorization']
+  if (!header?.startsWith('Bearer ')) {
+    return reply.code(401).send({ error: 'unauthorized' })
+  }
+
+  const token = header.slice(7)
+  try {
+    await authPort.verifyToken(token)
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return reply.code(401).send({ error: 'unauthorized' })
+    }
+    throw err
+  }
 }
 
 export function createServer(deps: HttpDeps): FastifyInstance {
   const app = Fastify({ logger: true })
+
+  app.addHook('onRequest', async (req, reply) => {
+    await authMiddleware(deps.authPort, req, reply)
+  })
 
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof z.ZodError) {
@@ -46,6 +81,12 @@ export function createServer(deps: HttpDeps): FastifyInstance {
   })
 
   app.get('/health', async () => ({ status: 'ok' }))
+
+  app.post('/auth/token', async (req) => {
+    const { userId } = IssueTokenRequestSchema.parse(req.body)
+    const token = await deps.authPort.issueToken(userId)
+    return { token }
+  })
 
   app.post('/profiles', async (req, reply) => {
     const profile = UserProfileSchema.parse(req.body)
