@@ -1,46 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import type { MatchPort } from '../domain/match/port'
-import type { SeenFilterPort } from '../domain/seen-filter/port'
+import { InMemoryMatchAdapter } from '../adapters/outbound/match/inMemory'
+import { InMemorySeenFilterAdapter } from '../adapters/outbound/seen-filter/inMemory'
+import { InMemorySwipeMatchAdapter } from '../adapters/outbound/swipe-match/inMemory'
 import { UserIdSchema, type UserId } from '../domain/shared/types'
-import type {
-  SwipeMatchPort,
-  SwipeResult,
-} from '../domain/swipe-match/port'
 import type { Swipe } from '../domain/swipe-match/types'
 import { RecordSwipeUseCase } from './recordSwipe'
 
 const SWIPER = UserIdSchema.parse('00000000-0000-4000-8000-00000000000a')
 const TARGET = UserIdSchema.parse('00000000-0000-4000-8000-00000000000b')
 const SWIPED_AT = new Date('2026-04-29T00:00:00Z')
-
-class StubSwipeMatchPort implements SwipeMatchPort {
-  public received: Swipe[] = []
-  constructor(private readonly result: SwipeResult) {}
-  async recordSwipe(swipe: Swipe): Promise<SwipeResult> {
-    this.received.push(swipe)
-    return this.result
-  }
-}
-
-class InMemorySeenFilter implements SeenFilterPort {
-  public adds: Array<{ userId: UserId; candidateId: UserId }> = []
-  async add(userId: UserId, candidateId: UserId): Promise<void> {
-    this.adds.push({ userId, candidateId })
-  }
-  async contains(): Promise<Set<UserId>> {
-    return new Set()
-  }
-}
-
-class StubMatchPort implements MatchPort {
-  public records: Array<{ userA: UserId; userB: UserId; matchedAt: Date }> = []
-  async recordMatch(userA: UserId, userB: UserId, matchedAt: Date): Promise<void> {
-    this.records.push({ userA, userB, matchedAt })
-  }
-  async listForUser(): Promise<never[]> {
-    return []
-  }
-}
 
 const makeSwipe = (overrides: Partial<Swipe> = {}): Swipe => ({
   swiperId: SWIPER,
@@ -50,102 +18,97 @@ const makeSwipe = (overrides: Partial<Swipe> = {}): Swipe => ({
   ...overrides,
 })
 
-const matchedResult: SwipeResult = {
-  kind: 'matched',
-  match: { userAId: SWIPER, userBId: TARGET, matchedAt: SWIPED_AT },
+type Harness = {
+  useCase: RecordSwipeUseCase
+  swipeMatch: InMemorySwipeMatchAdapter
+  seenFilter: InMemorySeenFilterAdapter
+  matchPort: InMemoryMatchAdapter
+}
+
+const makeHarness = (): Harness => {
+  const swipeMatch = new InMemorySwipeMatchAdapter()
+  const seenFilter = new InMemorySeenFilterAdapter()
+  const matchPort = new InMemoryMatchAdapter()
+  const useCase = new RecordSwipeUseCase(swipeMatch, seenFilter, matchPort)
+  return { useCase, swipeMatch, seenFilter, matchPort }
+}
+
+const reciprocate = async (h: Harness, swiper: UserId, target: UserId): Promise<void> => {
+  await h.swipeMatch.recordSwipe({
+    swiperId: target,
+    targetId: swiper,
+    decision: 'yes',
+    createdAt: SWIPED_AT,
+  })
 }
 
 describe('RecordSwipeUseCase', () => {
-  it('forwards the swipe to SwipeMatchPort', async () => {
-    const swipePort = new StubSwipeMatchPort({ kind: 'recorded' })
-    const useCase = new RecordSwipeUseCase(
-      swipePort,
-      new InMemorySeenFilter(),
-      new StubMatchPort(),
-    )
-    const swipe = makeSwipe()
+  it('returns recorded when no inverse swipe exists', async () => {
+    const h = makeHarness()
 
-    await useCase.execute(swipe)
+    const result = await h.useCase.execute(makeSwipe())
 
-    expect(swipePort.received).toEqual([swipe])
+    expect(result).toEqual({ kind: 'recorded' })
   })
 
-  it('returns the SwipeResult from the port', async () => {
-    const useCase = new RecordSwipeUseCase(
-      new StubSwipeMatchPort(matchedResult),
-      new InMemorySeenFilter(),
-      new StubMatchPort(),
-    )
+  it('returns matched when an inverse yes already exists', async () => {
+    const h = makeHarness()
+    await reciprocate(h, SWIPER, TARGET)
 
-    const out = await useCase.execute(makeSwipe())
+    const result = await h.useCase.execute(makeSwipe())
 
-    expect(out).toEqual(matchedResult)
+    expect(result.kind).toBe('matched')
+    if (result.kind === 'matched') {
+      expect(new Set([result.match.userAId, result.match.userBId])).toEqual(
+        new Set([SWIPER, TARGET]),
+      )
+    }
   })
 
   it("marks the target as seen by the swiper (so they won't appear in future feeds)", async () => {
-    const seenFilter = new InMemorySeenFilter()
-    const useCase = new RecordSwipeUseCase(
-      new StubSwipeMatchPort({ kind: 'recorded' }),
-      seenFilter,
-      new StubMatchPort(),
-    )
+    const h = makeHarness()
 
-    await useCase.execute(makeSwipe())
+    await h.useCase.execute(makeSwipe())
 
-    expect(seenFilter.adds).toEqual([{ userId: SWIPER, candidateId: TARGET }])
+    const seen = await h.seenFilter.contains(SWIPER, [TARGET])
+    expect(seen).toEqual(new Set([TARGET]))
   })
 
   it('marks target as seen for both yes and no decisions', async () => {
-    const seenFilter = new InMemorySeenFilter()
-    const useCase = new RecordSwipeUseCase(
-      new StubSwipeMatchPort({ kind: 'recorded' }),
-      seenFilter,
-      new StubMatchPort(),
-    )
+    const h = makeHarness()
 
-    await useCase.execute(makeSwipe({ decision: 'no' }))
+    await h.useCase.execute(makeSwipe({ decision: 'no' }))
 
-    expect(seenFilter.adds).toEqual([{ userId: SWIPER, candidateId: TARGET }])
+    const seen = await h.seenFilter.contains(SWIPER, [TARGET])
+    expect(seen).toEqual(new Set([TARGET]))
   })
 
   it('does not mark the swiper as seen by the target (one-directional)', async () => {
-    const seenFilter = new InMemorySeenFilter()
-    const useCase = new RecordSwipeUseCase(
-      new StubSwipeMatchPort(matchedResult),
-      seenFilter,
-      new StubMatchPort(),
-    )
+    const h = makeHarness()
+    await reciprocate(h, SWIPER, TARGET)
 
-    await useCase.execute(makeSwipe())
+    await h.useCase.execute(makeSwipe())
 
-    expect(seenFilter.adds).toEqual([{ userId: SWIPER, candidateId: TARGET }])
+    const reverse = await h.seenFilter.contains(TARGET, [SWIPER])
+    expect(reverse).toEqual(new Set())
   })
 
   it('records the match on MatchPort when result is matched', async () => {
-    const matchPort = new StubMatchPort()
-    const useCase = new RecordSwipeUseCase(
-      new StubSwipeMatchPort(matchedResult),
-      new InMemorySeenFilter(),
-      matchPort,
-    )
+    const h = makeHarness()
+    await reciprocate(h, SWIPER, TARGET)
 
-    await useCase.execute(makeSwipe())
+    await h.useCase.execute(makeSwipe())
 
-    expect(matchPort.records).toEqual([
-      { userA: SWIPER, userB: TARGET, matchedAt: SWIPED_AT },
-    ])
+    const list = await h.matchPort.listForUser(SWIPER)
+    expect(list).toEqual([{ otherUserId: TARGET, matchedAt: SWIPED_AT }])
   })
 
   it('does not record on MatchPort when result is recorded (no match)', async () => {
-    const matchPort = new StubMatchPort()
-    const useCase = new RecordSwipeUseCase(
-      new StubSwipeMatchPort({ kind: 'recorded' }),
-      new InMemorySeenFilter(),
-      matchPort,
-    )
+    const h = makeHarness()
 
-    await useCase.execute(makeSwipe())
+    await h.useCase.execute(makeSwipe())
 
-    expect(matchPort.records).toEqual([])
+    const list = await h.matchPort.listForUser(SWIPER)
+    expect(list).toEqual([])
   })
 })

@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
+import { InMemorySeenFilterAdapter } from '../adapters/outbound/seen-filter/inMemory'
 import type { FeedCandidate, FeedPort, FeedQuery } from '../domain/feed/port'
 import type { Location, UserProfile } from '../domain/user/types'
-import type { SeenFilterPort } from '../domain/seen-filter/port'
 import { UserIdSchema, type UserId } from '../domain/shared/types'
 import { GetFeedUseCase } from './getFeed'
 
@@ -45,27 +45,11 @@ class InMemoryFeedPort implements FeedPort {
   }
 }
 
-class InMemorySeenFilter implements SeenFilterPort {
-  private readonly seen = new Map<UserId, Set<UserId>>()
+class CountingSeenFilter extends InMemorySeenFilterAdapter {
   public containsCallCount = 0
-
-  async add(userId: UserId, candidateId: UserId): Promise<void> {
-    let set = this.seen.get(userId)
-    if (set === undefined) {
-      set = new Set()
-      this.seen.set(userId, set)
-    }
-    set.add(candidateId)
-  }
-
-  async contains(userId: UserId, candidateIds: UserId[]): Promise<Set<UserId>> {
+  override async contains(userId: UserId, candidateIds: UserId[]): Promise<Set<UserId>> {
     this.containsCallCount += 1
-    const userSeen = this.seen.get(userId) ?? new Set()
-    const result = new Set<UserId>()
-    for (const id of candidateIds) {
-      if (userSeen.has(id)) result.add(id)
-    }
-    return result
+    return super.contains(userId, candidateIds)
   }
 }
 
@@ -74,7 +58,7 @@ describe('GetFeedUseCase', () => {
     const v = viewer()
     const c1 = candidate(1)
     const c2 = candidate(2)
-    const useCase = new GetFeedUseCase(new InMemoryFeedPort([c1, c2]), new InMemorySeenFilter())
+    const useCase = new GetFeedUseCase(new InMemoryFeedPort([c1, c2]), new CountingSeenFilter())
 
     const result = await useCase.execute({
       viewer: v,
@@ -91,7 +75,7 @@ describe('GetFeedUseCase', () => {
     const c1 = candidate(1)
     const c2 = candidate(2)
     const c3 = candidate(3)
-    const seenFilter = new InMemorySeenFilter()
+    const seenFilter = new CountingSeenFilter()
     await seenFilter.add(v.id, c2.profile.id)
     const useCase = new GetFeedUseCase(new InMemoryFeedPort([c1, c2, c3]), seenFilter)
 
@@ -111,7 +95,7 @@ describe('GetFeedUseCase', () => {
     const nearLast = candidate(1)
     const useCase = new GetFeedUseCase(
       new InMemoryFeedPort([farFirst, nearLast]),
-      new InMemorySeenFilter(),
+      new CountingSeenFilter(),
     )
 
     const result = await useCase.execute({
@@ -126,7 +110,7 @@ describe('GetFeedUseCase', () => {
 
   it('returns empty when FeedPort returns no candidates', async () => {
     const v = viewer()
-    const useCase = new GetFeedUseCase(new InMemoryFeedPort([]), new InMemorySeenFilter())
+    const useCase = new GetFeedUseCase(new InMemoryFeedPort([]), new CountingSeenFilter())
 
     const result = await useCase.execute({
       viewer: v,
@@ -140,7 +124,7 @@ describe('GetFeedUseCase', () => {
 
   it('does not call SeenFilterPort when FeedPort returned nothing', async () => {
     const v = viewer()
-    const seenFilter = new InMemorySeenFilter()
+    const seenFilter = new CountingSeenFilter()
     const useCase = new GetFeedUseCase(new InMemoryFeedPort([]), seenFilter)
 
     await useCase.execute({
@@ -156,7 +140,7 @@ describe('GetFeedUseCase', () => {
   it('forwards the FeedQuery built from input to FeedPort', async () => {
     const v = viewer()
     const feedPort = new InMemoryFeedPort([])
-    const useCase = new GetFeedUseCase(feedPort, new InMemorySeenFilter())
+    const useCase = new GetFeedUseCase(feedPort, new CountingSeenFilter())
 
     await useCase.execute({
       viewer: v,
