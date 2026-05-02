@@ -1,5 +1,5 @@
 import type { FeedCandidate, FeedPort } from '../domain/feed/port'
-import type { Location, UserProfile } from '../domain/feed/types'
+import type { Location, UserProfile } from '../domain/user/types'
 import type { SeenFilterPort } from '../domain/seen-filter/port'
 
 export type GetFeedInput = {

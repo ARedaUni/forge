@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
-import { GenderSchema } from '../../../domain/feed/types'
+import { GenderSchema } from '../../../domain/user/types'
 import { UserIdSchema, type UserId } from '../../../domain/shared/types'
 import {
   bootstrapPostgres,
@@ -48,5 +48,29 @@ describe('PostgresUserRepositoryAdapter', () => {
       [id],
     )
     expect(row.rows[0]?.age).toBe(30)
+  })
+
+  describe('findById', () => {
+    it('returns null when the user does not exist', async () => {
+      const found = await adapter.findById(userId())
+      expect(found).toBeNull()
+    })
+
+    it('returns the profile when it exists, round-tripping every field', async () => {
+      const id = userId()
+      const profile = makeProfile(id)
+      await adapter.upsert(profile)
+
+      const found = await adapter.findById(id)
+
+      expect(found).not.toBeNull()
+      expect(found?.id).toBe(id)
+      expect(found?.age).toBe(profile.age)
+      expect(found?.gender).toBe(profile.gender)
+      expect(found?.interestedIn).toEqual(profile.interestedIn)
+      expect(found?.ageRange).toEqual(profile.ageRange)
+      expect(found?.location.lat).toBeCloseTo(profile.location.lat, 4)
+      expect(found?.location.lng).toBeCloseTo(profile.location.lng, 4)
+    })
   })
 })

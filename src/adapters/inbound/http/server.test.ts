@@ -2,12 +2,12 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, describe, expect, it } from 'vitest'
 import type { AuthPort } from '../../../domain/auth/port'
 import type { FeedCandidate } from '../../../domain/feed/port'
-import type { Gender, UserProfile } from '../../../domain/feed/types'
+import type { Gender, UserProfile } from '../../../domain/user/types'
 import type { MatchEntry } from '../../../domain/match/port'
 import { UserIdSchema, type UserId } from '../../../domain/shared/types'
 import type { SwipeResult } from '../../../domain/swipe-match/port'
 import { JwtAuthAdapter } from '../../outbound/auth/jwt'
-import type { GetFeedUseCase } from '../../../use-cases/getFeed'
+import type { GetFeedUseCase, GetFeedInput } from '../../../use-cases/getFeed'
 import type { RecordSwipeUseCase } from '../../../use-cases/recordSwipe'
 import { createServer, type HttpDeps } from './server'
 
@@ -29,14 +29,15 @@ const makeCandidate = (id: UserId): FeedCandidate => ({
 
 const realAuth = new JwtAuthAdapter({ secret: 'test-secret' })
 
-const NOOP_TOKEN = 'test-token'
-const noopAuth: AuthPort = {
-  issueToken: async (id) => `${NOOP_TOKEN}-${id}`,
-  verifyToken: async () => UserIdSchema.parse(randomUUID()),
+function noopAuthFor(id: UserId): AuthPort {
+  return {
+    issueToken: async () => 'noop-token',
+    verifyToken: async () => id,
+  }
 }
-const noopHeaders = { authorization: `Bearer ${NOOP_TOKEN}` }
+const noopHeaders = { authorization: 'Bearer noop-token' }
 
-function makeDeps(overrides: Partial<HttpDeps> = {}): HttpDeps {
+function makeDeps(principalId: UserId, overrides: Partial<HttpDeps> = {}): HttpDeps {
   return {
     getFeed: {
       execute: async () => [],
@@ -46,12 +47,13 @@ function makeDeps(overrides: Partial<HttpDeps> = {}): HttpDeps {
     } as unknown as RecordSwipeUseCase,
     userRepo: {
       upsert: async () => undefined,
+      findById: async (id) => makeProfile(id),
     },
     matchPort: {
       recordMatch: async () => undefined,
       listForUser: async (): Promise<MatchEntry[]> => [],
     },
-    authPort: noopAuth,
+    authPort: noopAuthFor(principalId),
     ...overrides,
   }
 }
@@ -59,7 +61,7 @@ function makeDeps(overrides: Partial<HttpDeps> = {}): HttpDeps {
 describe('HTTP server', () => {
   describe('GET /health', () => {
     it('returns ok', async () => {
-      const app = createServer(makeDeps())
+      const app = createServer(makeDeps(userId()))
       const res = await app.inject({ method: 'GET', url: '/health' })
       expect(res.statusCode).toBe(200)
       expect(res.json()).toEqual({ status: 'ok' })
@@ -71,8 +73,11 @@ describe('HTTP server', () => {
       const id = userId()
       let upserted: UserProfile | undefined
       const app = createServer(
-        makeDeps({
-          userRepo: { upsert: async (p) => { upserted = p } },
+        makeDeps(id, {
+          userRepo: {
+            upsert: async (p) => { upserted = p },
+            findById: async () => null,
+          },
         }),
       )
 
@@ -88,8 +93,23 @@ describe('HTTP server', () => {
       expect(upserted?.id).toBe(id)
     })
 
+    it('returns 403 when the body id does not match the principal', async () => {
+      const principal = userId()
+      const other = userId()
+      const app = createServer(makeDeps(principal))
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/profiles',
+        headers: noopHeaders,
+        payload: makeProfile(other),
+      })
+
+      expect(res.statusCode).toBe(403)
+    })
+
     it('returns 400 for invalid body', async () => {
-      const app = createServer(makeDeps())
+      const app = createServer(makeDeps(userId()))
       const res = await app.inject({
         method: 'POST',
         url: '/profiles',
@@ -101,14 +121,18 @@ describe('HTTP server', () => {
   })
 
   describe('POST /feed', () => {
-    it('returns candidates from the use case', async () => {
+    it('fetches the viewer profile from the principal and returns candidates', async () => {
       const viewerId = userId()
       const candidateId = userId()
       const candidate = makeCandidate(candidateId)
+      let captured: GetFeedInput | undefined
       const app = createServer(
-        makeDeps({
+        makeDeps(viewerId, {
           getFeed: {
-            execute: async () => [candidate],
+            execute: async (input: GetFeedInput) => {
+              captured = input
+              return [candidate]
+            },
           } as unknown as GetFeedUseCase,
         }),
       )
@@ -118,7 +142,6 @@ describe('HTTP server', () => {
         url: '/feed',
         headers: noopHeaders,
         payload: {
-          viewer: makeProfile(viewerId),
           center: { lat: 51.5074, lng: -0.1278 },
           radiusKm: 10,
           limit: 20,
@@ -128,10 +151,31 @@ describe('HTTP server', () => {
       expect(res.statusCode).toBe(200)
       expect(res.json().candidates).toHaveLength(1)
       expect(res.json().candidates[0].profile.id).toBe(candidateId)
+      expect(captured?.viewer.id).toBe(viewerId)
+    })
+
+    it('returns 404 when the principal has no profile yet', async () => {
+      const app = createServer(
+        makeDeps(userId(), {
+          userRepo: {
+            upsert: async () => undefined,
+            findById: async () => null,
+          },
+        }),
+      )
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/feed',
+        headers: noopHeaders,
+        payload: { center: { lat: 0, lng: 0 }, radiusKm: 10, limit: 20 },
+      })
+
+      expect(res.statusCode).toBe(404)
     })
 
     it('returns 400 for missing required fields', async () => {
-      const app = createServer(makeDeps())
+      const app = createServer(makeDeps(userId()))
       const res = await app.inject({
         method: 'POST',
         url: '/feed',
@@ -143,20 +187,32 @@ describe('HTTP server', () => {
   })
 
   describe('POST /swipes', () => {
-    it('returns recorded when no match', async () => {
-      const app = createServer(makeDeps())
+    it('uses the principal as swiperId, returns recorded when no match', async () => {
+      const swiper = userId()
+      const target = userId()
+      let captured: { swiperId: UserId; targetId: UserId } | undefined
+      const app = createServer(
+        makeDeps(swiper, {
+          recordSwipe: {
+            execute: async (s: { swiperId: UserId; targetId: UserId }): Promise<SwipeResult> => {
+              captured = s
+              return { kind: 'recorded' }
+            },
+          } as unknown as RecordSwipeUseCase,
+        }),
+      )
+
       const res = await app.inject({
         method: 'POST',
         url: '/swipes',
         headers: noopHeaders,
-        payload: {
-          swiperId: userId(),
-          targetId: userId(),
-          decision: 'yes',
-        },
+        payload: { targetId: target, decision: 'yes' },
       })
+
       expect(res.statusCode).toBe(200)
       expect(res.json()).toEqual({ kind: 'recorded' })
+      expect(captured?.swiperId).toBe(swiper)
+      expect(captured?.targetId).toBe(target)
     })
 
     it('returns matched when both users liked each other', async () => {
@@ -164,7 +220,7 @@ describe('HTTP server', () => {
       const b = userId()
       const matchedAt = new Date('2026-05-01T10:00:00Z')
       const app = createServer(
-        makeDeps({
+        makeDeps(a, {
           recordSwipe: {
             execute: async (): Promise<SwipeResult> => ({
               kind: 'matched',
@@ -178,7 +234,7 @@ describe('HTTP server', () => {
         method: 'POST',
         url: '/swipes',
         headers: noopHeaders,
-        payload: { swiperId: a, targetId: b, decision: 'yes' },
+        payload: { targetId: b, decision: 'yes' },
       })
 
       expect(res.statusCode).toBe(200)
@@ -187,53 +243,52 @@ describe('HTTP server', () => {
     })
 
     it('returns 400 for invalid decision value', async () => {
-      const app = createServer(makeDeps())
+      const app = createServer(makeDeps(userId()))
       const res = await app.inject({
         method: 'POST',
         url: '/swipes',
         headers: noopHeaders,
-        payload: { swiperId: userId(), targetId: userId(), decision: 'maybe' },
+        payload: { targetId: userId(), decision: 'maybe' },
       })
       expect(res.statusCode).toBe(400)
     })
   })
 
   describe('GET /matches', () => {
-    it('returns matches for a user', async () => {
+    it('returns matches for the principal', async () => {
       const viewerId = userId()
       const otherId = userId()
       const matchedAt = new Date('2026-05-01T00:00:00Z')
+      let listedFor: UserId | undefined
       const app = createServer(
-        makeDeps({
+        makeDeps(viewerId, {
           matchPort: {
             recordMatch: async () => undefined,
-            listForUser: async () => [{ otherUserId: otherId, matchedAt }],
+            listForUser: async (id) => {
+              listedFor = id
+              return [{ otherUserId: otherId, matchedAt }]
+            },
           },
         }),
       )
 
       const res = await app.inject({
         method: 'GET',
-        url: `/matches?userId=${viewerId}`,
+        url: '/matches',
         headers: noopHeaders,
       })
 
       expect(res.statusCode).toBe(200)
       expect(res.json().matches).toHaveLength(1)
       expect(res.json().matches[0].otherUserId).toBe(otherId)
-    })
-
-    it('returns 400 when userId is missing', async () => {
-      const app = createServer(makeDeps())
-      const res = await app.inject({ method: 'GET', url: '/matches', headers: noopHeaders })
-      expect(res.statusCode).toBe(400)
+      expect(listedFor).toBe(viewerId)
     })
   })
 
   describe('POST /auth/token', () => {
     it('issues a token for a valid userId', async () => {
       const id = userId()
-      const app = createServer(makeDeps({ authPort: realAuth }))
+      const app = createServer(makeDeps(userId(), { authPort: realAuth }))
       const res = await app.inject({
         method: 'POST',
         url: '/auth/token',
@@ -245,7 +300,7 @@ describe('HTTP server', () => {
     })
 
     it('returns 400 for a non-uuid userId', async () => {
-      const app = createServer(makeDeps())
+      const app = createServer(makeDeps(userId()))
       const res = await app.inject({
         method: 'POST',
         url: '/auth/token',
@@ -257,35 +312,48 @@ describe('HTTP server', () => {
 
   describe('auth middleware', () => {
     it('returns 401 on protected routes with no token', async () => {
-      const app = createServer(makeDeps({ authPort: realAuth }))
-      const res = await app.inject({ method: 'GET', url: '/matches?userId=' + userId() })
+      const app = createServer(makeDeps(userId(), { authPort: realAuth }))
+      const res = await app.inject({ method: 'GET', url: '/matches' })
       expect(res.statusCode).toBe(401)
     })
 
     it('returns 401 on protected routes with a bad token', async () => {
-      const app = createServer(makeDeps({ authPort: realAuth }))
+      const app = createServer(makeDeps(userId(), { authPort: realAuth }))
       const res = await app.inject({
         method: 'GET',
-        url: '/matches?userId=' + userId(),
+        url: '/matches',
         headers: { authorization: 'Bearer not.a.real.token' },
       })
       expect(res.statusCode).toBe(401)
     })
 
-    it('allows a request with a valid token through', async () => {
+    it('allows a request with a valid token through and binds the principal', async () => {
       const id = userId()
       const token = await realAuth.issueToken(id)
-      const app = createServer(makeDeps({ authPort: realAuth }))
+      let listedFor: UserId | undefined
+      const app = createServer(
+        makeDeps(userId(), {
+          authPort: realAuth,
+          matchPort: {
+            recordMatch: async () => undefined,
+            listForUser: async (uid) => {
+              listedFor = uid
+              return []
+            },
+          },
+        }),
+      )
       const res = await app.inject({
         method: 'GET',
-        url: `/matches?userId=${id}`,
+        url: '/matches',
         headers: { authorization: `Bearer ${token}` },
       })
       expect(res.statusCode).toBe(200)
+      expect(listedFor).toBe(id)
     })
 
     it('GET /health is public (no token required)', async () => {
-      const app = createServer(makeDeps({ authPort: realAuth }))
+      const app = createServer(makeDeps(userId(), { authPort: realAuth }))
       const res = await app.inject({ method: 'GET', url: '/health' })
       expect(res.statusCode).toBe(200)
     })

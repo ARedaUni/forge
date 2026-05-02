@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import type { FeedCandidate, FeedPort, FeedQuery } from '../domain/feed/port'
-import type { Location, UserProfile } from '../domain/feed/types'
+import type { Location, UserProfile } from '../domain/user/types'
 import type { SeenFilterPort } from '../domain/seen-filter/port'
 import { UserIdSchema, type UserId } from '../domain/shared/types'
 import { GetFeedUseCase } from './getFeed'

@@ -1,29 +1,32 @@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { AuthError, type AuthPort } from '../../../domain/auth/port'
-import { LocationSchema, UserProfileSchema } from '../../../domain/feed/types'
 import type { MatchPort } from '../../../domain/match/port'
-import { UserIdSchema } from '../../../domain/shared/types'
+import { UserIdSchema, type UserId } from '../../../domain/shared/types'
 import { SwipeDecisionSchema } from '../../../domain/swipe-match/types'
-import type { UserRepositoryPort } from '../../../domain/user-repository/port'
+import type { UserRepositoryPort } from '../../../domain/user/port'
+import { LocationSchema, UserProfileSchema } from '../../../domain/user/types'
 import type { GetFeedUseCase } from '../../../use-cases/getFeed'
 import type { RecordSwipeUseCase } from '../../../use-cases/recordSwipe'
 
+declare module 'fastify' {
+  interface FastifyRequest {
+    principal?: { userId: UserId }
+  }
+}
+
 const FeedRequestSchema = z.object({
-  viewer: UserProfileSchema,
   center: LocationSchema,
   radiusKm: z.number().positive(),
   limit: z.number().int().positive().max(500),
 })
 
 const SwipeRequestSchema = z.object({
-  swiperId: UserIdSchema,
   targetId: UserIdSchema,
   decision: SwipeDecisionSchema,
 })
 
 const ListMatchesQuerySchema = z.object({
-  userId: UserIdSchema,
   limit: z.coerce.number().int().positive().max(200).optional(),
   before: z.coerce.date().optional(),
 })
@@ -56,13 +59,21 @@ async function authMiddleware(
 
   const token = header.slice(7)
   try {
-    await authPort.verifyToken(token)
+    const userId = await authPort.verifyToken(token)
+    req.principal = { userId }
   } catch (err) {
     if (err instanceof AuthError) {
       return reply.code(401).send({ error: 'unauthorized' })
     }
     throw err
   }
+}
+
+function requirePrincipal(req: FastifyRequest): { userId: UserId } {
+  if (!req.principal) {
+    throw new AuthError('missing principal')
+  }
+  return req.principal
 }
 
 export function createServer(deps: HttpDeps): FastifyInstance {
@@ -75,6 +86,9 @@ export function createServer(deps: HttpDeps): FastifyInstance {
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof z.ZodError) {
       return reply.code(400).send({ error: 'invalid_input', issues: err.issues })
+    }
+    if (err instanceof AuthError) {
+      return reply.code(401).send({ error: 'unauthorized' })
     }
     app.log.error(err)
     return reply.code(500).send({ error: 'internal_error' })
@@ -89,28 +103,41 @@ export function createServer(deps: HttpDeps): FastifyInstance {
   })
 
   app.post('/profiles', async (req, reply) => {
+    const { userId } = requirePrincipal(req)
     const profile = UserProfileSchema.parse(req.body)
+    if (profile.id !== userId) {
+      return reply.code(403).send({ error: 'forbidden' })
+    }
     await deps.userRepo.upsert(profile)
     return reply.code(201).send({ id: profile.id })
   })
 
-  app.post('/feed', async (req) => {
+  app.post('/feed', async (req, reply) => {
+    const { userId } = requirePrincipal(req)
     const input = FeedRequestSchema.parse(req.body)
-    const candidates = await deps.getFeed.execute(input)
+    const viewer = await deps.userRepo.findById(userId)
+    if (!viewer) {
+      return reply.code(404).send({ error: 'profile_not_found' })
+    }
+    const candidates = await deps.getFeed.execute({ ...input, viewer })
     return { candidates }
   })
 
   app.post('/swipes', async (req) => {
-    const parsed = SwipeRequestSchema.parse(req.body)
+    const { userId } = requirePrincipal(req)
+    const { targetId, decision } = SwipeRequestSchema.parse(req.body)
     const result = await deps.recordSwipe.execute({
-      ...parsed,
+      swiperId: userId,
+      targetId,
+      decision,
       createdAt: new Date(),
     })
     return result
   })
 
   app.get('/matches', async (req) => {
-    const { userId, limit, before } = ListMatchesQuerySchema.parse(req.query)
+    const { userId } = requirePrincipal(req)
+    const { limit, before } = ListMatchesQuerySchema.parse(req.query)
     const options: { limit?: number; before?: Date } = {}
     if (limit !== undefined) options.limit = limit
     if (before !== undefined) options.before = before

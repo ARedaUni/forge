@@ -4,7 +4,7 @@ import { PostgresPostGisFeedAdapter } from './adapters/outbound/feed/postgresPos
 import { PostgresMatchAdapter } from './adapters/outbound/match/postgres'
 import { RedisBloomSeenFilterAdapter } from './adapters/outbound/seen-filter/redisBloom'
 import { CassandraLwtSwipeMatchAdapter } from './adapters/outbound/swipe-match/cassandraLwt'
-import { PostgresUserRepositoryAdapter } from './adapters/outbound/user-repository/postgres'
+import { PostgresUserRepositoryAdapter } from './adapters/outbound/user/postgres'
 import { bootstrapSchema as bootstrapCassandra } from './infrastructure/cassandra/bootstrap'
 import { createCassandraClient } from './infrastructure/cassandra/client'
 import { bootstrapPostgres } from './infrastructure/postgres/bootstrap'

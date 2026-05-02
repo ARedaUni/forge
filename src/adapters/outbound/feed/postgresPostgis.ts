@@ -1,6 +1,6 @@
 import type pg from 'pg'
 import type { FeedCandidate, FeedPort, FeedQuery } from '../../../domain/feed/port'
-import { GenderSchema, type Gender, type UserProfile } from '../../../domain/feed/types'
+import { GenderSchema, type Gender, type UserProfile } from '../../../domain/user/types'
 import { UserIdSchema } from '../../../domain/shared/types'
 
 const QUERY_SQL = `

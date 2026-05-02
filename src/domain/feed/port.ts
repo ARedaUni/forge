@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { LocationSchema, UserProfileSchema, type UserProfile } from './types'
+import { LocationSchema, UserProfileSchema, type UserProfile } from '../user/types'
 
 export const FeedQuerySchema = z.object({
   viewer: UserProfileSchema,
