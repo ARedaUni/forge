@@ -7,6 +7,7 @@ import type { MatchEntry } from '../../../domain/match/port'
 import { UserIdSchema, type UserId } from '../../../domain/shared/types'
 import type { SwipeResult } from '../../../domain/swipe-match/port'
 import { JwtAuthAdapter } from '../../outbound/auth/jwt'
+import { InMemoryLoggerAdapter } from '../../outbound/logger/inMemory'
 import type { GetFeedUseCase, GetFeedInput } from '../../../use-cases/getFeed'
 import type { RecordSwipeUseCase } from '../../../use-cases/recordSwipe'
 import { createServer, type HttpDeps } from './server'
@@ -54,6 +55,7 @@ function makeDeps(principalId: UserId, overrides: Partial<HttpDeps> = {}): HttpD
       listForUser: async (): Promise<MatchEntry[]> => [],
     },
     authPort: noopAuthFor(principalId),
+    logger: new InMemoryLoggerAdapter(),
     ...overrides,
   }
 }

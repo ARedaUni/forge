@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto'
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { AuthError, type AuthPort } from '../../../domain/auth/port'
 import type { MatchPort } from '../../../domain/match/port'
+import type { Logger } from '../../../domain/observability/logger'
 import { UserIdSchema, type UserId } from '../../../domain/shared/types'
 import { SwipeDecisionSchema } from '../../../domain/swipe-match/types'
 import type { UserRepositoryPort } from '../../../domain/user/port'
@@ -12,6 +14,7 @@ import type { RecordSwipeUseCase } from '../../../use-cases/recordSwipe'
 declare module 'fastify' {
   interface FastifyRequest {
     principal?: { userId: UserId }
+    logger?: Logger
   }
 }
 
@@ -41,6 +44,7 @@ export type HttpDeps = {
   userRepo: UserRepositoryPort
   matchPort: MatchPort
   authPort: AuthPort
+  logger: Logger
 }
 
 const PUBLIC_ROUTES = new Set(['/health', '/auth/token'])
@@ -77,20 +81,27 @@ function requirePrincipal(req: FastifyRequest): { userId: UserId } {
 }
 
 export function createServer(deps: HttpDeps): FastifyInstance {
-  const app = Fastify({ logger: true })
+  const app = Fastify({ logger: false })
+
+  app.addHook('onRequest', async (req) => {
+    const reqId = randomUUID()
+    const child = deps.logger.child({ reqId, method: req.method, url: req.url })
+    req.logger = child
+    child.info('request received')
+  })
 
   app.addHook('onRequest', async (req, reply) => {
     await authMiddleware(deps.authPort, req, reply)
   })
 
-  app.setErrorHandler((err, _req, reply) => {
+  app.setErrorHandler((err, req, reply) => {
     if (err instanceof z.ZodError) {
       return reply.code(400).send({ error: 'invalid_input', issues: err.issues })
     }
     if (err instanceof AuthError) {
       return reply.code(401).send({ error: 'unauthorized' })
     }
-    app.log.error(err)
+    ;(req.logger ?? deps.logger).error('unhandled error', { err: String(err) })
     return reply.code(500).send({ error: 'internal_error' })
   })
 

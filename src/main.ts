@@ -1,5 +1,6 @@
 import { createServer } from './adapters/inbound/http/server'
 import { JwtAuthAdapter } from './adapters/outbound/auth/jwt'
+import { PinoLoggerAdapter } from './adapters/outbound/logger/pino'
 import { PostgresPostGisFeedAdapter } from './adapters/outbound/feed/postgresPostgis'
 import { PostgresMatchAdapter } from './adapters/outbound/match/postgres'
 import { RedisBloomSeenFilterAdapter } from './adapters/outbound/seen-filter/redisBloom'
@@ -46,7 +47,9 @@ async function main(): Promise<void> {
     secret: process.env['JWT_SECRET'] ?? 'change-me-in-production',
   })
 
-  const server = createServer({ getFeed, recordSwipe, userRepo, matchPort, authPort })
+  const logger = new PinoLoggerAdapter({ level: process.env['LOG_LEVEL'] ?? 'info' })
+
+  const server = createServer({ getFeed, recordSwipe, userRepo, matchPort, authPort, logger })
 
   const port = Number(process.env['PORT'] ?? 3000)
   await server.listen({ port, host: '127.0.0.1' })
