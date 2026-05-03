@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import { z } from 'zod'
 import { AuthError, type AuthPort } from '../../../domain/auth/port'
 import type { MatchPort } from '../../../domain/match/port'
+import type { HealthCheck } from '../../../domain/observability/healthCheck'
 import type { Logger } from '../../../domain/observability/logger'
 import { enterLoggerContext } from '../../../infrastructure/observability/requestContext'
 import { UserIdSchema, type UserId } from '../../../domain/shared/types'
@@ -46,9 +47,10 @@ export type HttpDeps = {
   matchPort: MatchPort
   authPort: AuthPort
   logger: Logger
+  healthChecks?: HealthCheck[]
 }
 
-const PUBLIC_ROUTES = new Set(['/livez', '/auth/token'])
+const PUBLIC_ROUTES = new Set(['/livez', '/readyz', '/auth/token'])
 
 async function authMiddleware(
   authPort: AuthPort,
@@ -108,6 +110,24 @@ export function createServer(deps: HttpDeps): FastifyInstance {
   })
 
   app.get('/livez', async () => ({ status: 'ok' }))
+
+  app.get('/readyz', async (_req, reply) => {
+    const checks = deps.healthChecks ?? []
+    const results = await Promise.all(
+      checks.map(async (hc) => {
+        try {
+          await hc.check()
+          return { name: hc.name, ok: true, critical: hc.critical }
+        } catch {
+          return { name: hc.name, ok: false, critical: hc.critical }
+        }
+      }),
+    )
+    const criticalDown = results.some((r) => !r.ok && r.critical)
+    const status = criticalDown ? 'down' : 'ok'
+    const code = criticalDown ? 503 : 200
+    return reply.code(code).send({ status, checks: results })
+  })
 
   app.post('/auth/token', async (req) => {
     const { userId } = IssueTokenRequestSchema.parse(req.body)

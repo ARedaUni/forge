@@ -61,6 +61,33 @@ function makeDeps(principalId: UserId, overrides: Partial<HttpDeps> = {}): HttpD
 }
 
 describe('HTTP server', () => {
+  describe('GET /readyz', () => {
+    it('returns 200 with each check reported ok when every check resolves', async () => {
+      const calls: string[] = []
+      const app = createServer(
+        makeDeps(userId(), {
+          healthChecks: [
+            { name: 'postgres', critical: true, check: async () => { calls.push('postgres') } },
+            { name: 'cassandra', critical: true, check: async () => { calls.push('cassandra') } },
+            { name: 'redis', critical: true, check: async () => { calls.push('redis') } },
+          ],
+        }),
+      )
+
+      const res = await app.inject({ method: 'GET', url: '/readyz' })
+
+      expect(res.statusCode).toBe(200)
+      const body = res.json()
+      expect(body.status).toBe('ok')
+      expect(body.checks).toEqual([
+        { name: 'postgres', ok: true, critical: true },
+        { name: 'cassandra', ok: true, critical: true },
+        { name: 'redis', ok: true, critical: true },
+      ])
+      expect(calls.sort()).toEqual(['cassandra', 'postgres', 'redis'])
+    })
+  })
+
   describe('GET /livez', () => {
     it('returns 200 with status ok and performs no dependency calls', async () => {
       let userRepoCalled = false
