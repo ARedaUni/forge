@@ -1,17 +1,21 @@
 import { createServer } from './adapters/inbound/http/server'
+import { NotificationConsumer } from './adapters/inbound/kafka/notificationConsumer'
 import { JwtAuthAdapter } from './adapters/outbound/auth/jwt'
 import { PinoLoggerAdapter } from './adapters/outbound/logger/pino'
 import { PostgresPostGisFeedAdapter } from './adapters/outbound/feed/postgresPostgis'
 import { PostgresMatchAdapter } from './adapters/outbound/match/postgres'
+import { LoggingNotificationDeliveryAdapter } from './adapters/outbound/notification/logging'
 import { RedisBloomSeenFilterAdapter } from './adapters/outbound/seen-filter/redisBloom'
 import { CassandraLwtSwipeMatchAdapter } from './adapters/outbound/swipe-match/cassandraLwt'
 import { PostgresUserRepositoryAdapter } from './adapters/outbound/user/postgres'
 import { bootstrapSchema as bootstrapCassandra } from './infrastructure/cassandra/bootstrap'
 import { createCassandraClient } from './infrastructure/cassandra/client'
 import { registerMatchesConnector } from './infrastructure/debezium/registerConnector'
+import { createKafka } from './infrastructure/kafka/client'
 import { bootstrapPostgres } from './infrastructure/postgres/bootstrap'
 import { createPostgresPool } from './infrastructure/postgres/client'
 import { createRedisClient } from './infrastructure/redis/client'
+import { DeliverMatchNotificationUseCase } from './use-cases/deliverMatchNotification'
 import { GetFeedUseCase } from './use-cases/getFeed'
 import { RecordSwipeUseCase } from './use-cases/recordSwipe'
 
@@ -49,6 +53,24 @@ async function main(): Promise<void> {
 
   const logger = new PinoLoggerAdapter({ level: process.env['LOG_LEVEL'] ?? 'info' })
 
+  // Inbound consumer for the `notifications` topic Debezium produces. Closes
+  // the CDC loop: row → WAL → Kafka → consumer → delivery (logging for now).
+  const kafka = createKafka(process.env['KAFKA_CLIENT_ID'] ?? 'tinderclone')
+  const notificationDelivery = new LoggingNotificationDeliveryAdapter(
+    logger.child({ component: 'notification-delivery' }),
+  )
+  const deliverMatchNotification = new DeliverMatchNotificationUseCase(
+    notificationDelivery,
+  )
+  const notificationConsumer = new NotificationConsumer({
+    kafka,
+    useCase: deliverMatchNotification,
+    logger: logger.child({ component: 'notification-consumer' }),
+    groupId: process.env['NOTIFICATION_CONSUMER_GROUP'] ?? 'tinderclone-notifications',
+    topic: 'notifications',
+  })
+  await notificationConsumer.start()
+
   const server = createServer({ getFeed, recordSwipe, userRepo, matchPort, authPort, logger })
 
   const port = Number(process.env['PORT'] ?? 3000)
@@ -56,6 +78,7 @@ async function main(): Promise<void> {
 
   const shutdown = async (): Promise<void> => {
     await server.close()
+    await notificationConsumer.stop()
     await redis.quit()
     await cassandra.shutdown()
     await pool.end()
