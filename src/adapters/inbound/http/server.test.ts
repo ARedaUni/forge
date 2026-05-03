@@ -86,6 +86,84 @@ describe('HTTP server', () => {
       ])
       expect(calls.sort()).toEqual(['cassandra', 'postgres', 'redis'])
     })
+
+    it('returns 503 when a critical check rejects', async () => {
+      const app = createServer(
+        makeDeps(userId(), {
+          healthChecks: [
+            { name: 'postgres', critical: true, check: async () => {} },
+            {
+              name: 'cassandra',
+              critical: true,
+              check: async () => { throw new Error('node down') },
+            },
+          ],
+        }),
+      )
+
+      const res = await app.inject({ method: 'GET', url: '/readyz' })
+
+      expect(res.statusCode).toBe(503)
+      const body = res.json()
+      expect(body.status).toBe('down')
+      expect(body.checks).toEqual([
+        { name: 'postgres', ok: true, critical: true },
+        { name: 'cassandra', ok: false, critical: true },
+      ])
+    })
+
+    it('returns 503 when a critical check exceeds the timeout', async () => {
+      const app = createServer(
+        makeDeps(userId(), {
+          healthCheckTimeoutMs: 30,
+          healthChecks: [
+            { name: 'postgres', critical: true, check: async () => {} },
+            {
+              name: 'cassandra',
+              critical: true,
+              check: () => new Promise<void>((resolve) => setTimeout(resolve, 200)),
+            },
+          ],
+        }),
+      )
+
+      const start = Date.now()
+      const res = await app.inject({ method: 'GET', url: '/readyz' })
+      const elapsed = Date.now() - start
+
+      expect(res.statusCode).toBe(503)
+      expect(elapsed).toBeLessThan(150)
+      const body = res.json()
+      expect(body.checks.find((c: { name: string }) => c.name === 'cassandra')).toMatchObject({
+        ok: false,
+        critical: true,
+      })
+    })
+
+    it('returns 200 when only a non-critical check fails', async () => {
+      const app = createServer(
+        makeDeps(userId(), {
+          healthChecks: [
+            { name: 'postgres', critical: true, check: async () => {} },
+            {
+              name: 'kafka',
+              critical: false,
+              check: async () => { throw new Error('broker unreachable') },
+            },
+          ],
+        }),
+      )
+
+      const res = await app.inject({ method: 'GET', url: '/readyz' })
+
+      expect(res.statusCode).toBe(200)
+      const body = res.json()
+      expect(body.status).toBe('ok')
+      expect(body.checks).toEqual([
+        { name: 'postgres', ok: true, critical: true },
+        { name: 'kafka', ok: false, critical: false },
+      ])
+    })
   })
 
   describe('GET /livez', () => {

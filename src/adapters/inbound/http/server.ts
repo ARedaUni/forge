@@ -48,6 +48,24 @@ export type HttpDeps = {
   authPort: AuthPort
   logger: Logger
   healthChecks?: HealthCheck[]
+  healthCheckTimeoutMs?: number
+}
+
+const DEFAULT_HEALTH_CHECK_TIMEOUT_MS = 500
+
+async function withTimeout(
+  promise: Promise<void>,
+  timeoutMs: number,
+): Promise<void> {
+  let timer: NodeJS.Timeout | undefined
+  const timeout = new Promise<void>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('timeout')), timeoutMs)
+  })
+  try {
+    await Promise.race([promise, timeout])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 const PUBLIC_ROUTES = new Set(['/livez', '/readyz', '/auth/token'])
@@ -113,10 +131,11 @@ export function createServer(deps: HttpDeps): FastifyInstance {
 
   app.get('/readyz', async (_req, reply) => {
     const checks = deps.healthChecks ?? []
+    const timeoutMs = deps.healthCheckTimeoutMs ?? DEFAULT_HEALTH_CHECK_TIMEOUT_MS
     const results = await Promise.all(
       checks.map(async (hc) => {
         try {
-          await hc.check()
+          await withTimeout(hc.check(), timeoutMs)
           return { name: hc.name, ok: true, critical: hc.critical }
         } catch {
           return { name: hc.name, ok: false, critical: hc.critical }
