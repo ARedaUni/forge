@@ -19,13 +19,8 @@ const QUERY_SQL = `
     ST_Distance(u.location, c.pt) / 1000.0 AS distance_km
   FROM users u, center c
   WHERE ST_DWithin(u.location, c.pt, $3::float8)
-    AND u.gender = ANY($4::text[])
-    AND $5::text = ANY(u.interested_in)
-    AND u.age BETWEEN $6::int AND $7::int
-    AND $8::int BETWEEN u.age_min AND u.age_max
-    AND u.id <> $9::uuid
   ORDER BY ST_Distance(u.location, c.pt) ASC
-  LIMIT $10::int
+  LIMIT $4::int
 `
 
 const INSERT_SQL = `
@@ -77,12 +72,6 @@ export class PostgresPostGisFeedAdapter implements FeedPort {
       q.center.lng,
       q.center.lat,
       radiusMeters,
-      q.viewer.interestedIn,
-      q.viewer.gender,
-      q.viewer.ageRange.min,
-      q.viewer.ageRange.max,
-      q.viewer.age,
-      q.viewer.id,
       q.limit,
     ])
     return result.rows.map(rowToCandidate)

@@ -54,7 +54,7 @@ class CountingFeedExclusion extends InMemoryFeedExclusionAdapter {
 }
 
 describe('GetFeedUseCase', () => {
-  it('returns all candidates when none have been shown', async () => {
+  it('returns all compatible candidates when none have been shown', async () => {
     const v = viewer()
     const c1 = candidate(1)
     const c2 = candidate(2)
@@ -137,7 +137,103 @@ describe('GetFeedUseCase', () => {
     expect(feedExclusion.excludeSeenCallCount).toBe(0)
   })
 
-  it('forwards the FeedQuery built from input to FeedPort', async () => {
+  it('does not call FeedExclusionPort when no candidate is compatible', async () => {
+    const v = viewer({ gender: 'man', interestedIn: ['woman'] })
+    const incompatible = candidate(1, { gender: 'man', interestedIn: ['man'] })
+    const feedExclusion = new CountingFeedExclusion()
+    const useCase = new GetFeedUseCase(new InMemoryFeedPort([incompatible]), feedExclusion)
+
+    const result = await useCase.execute({
+      viewer: v,
+      center: ORIGIN,
+      radiusKm: 50,
+      limit: 10,
+    })
+
+    expect(result).toEqual([])
+    expect(feedExclusion.excludeSeenCallCount).toBe(0)
+  })
+
+  it("drops the viewer themselves when FeedPort returns them", async () => {
+    const v = viewer()
+    const selfCandidate: FeedCandidate = {
+      profile: { ...v },
+      distanceKm: 0,
+    }
+    const other = candidate(1)
+    const useCase = new GetFeedUseCase(
+      new InMemoryFeedPort([selfCandidate, other]),
+      new CountingFeedExclusion(),
+    )
+
+    const result = await useCase.execute({
+      viewer: v,
+      center: ORIGIN,
+      radiusKm: 50,
+      limit: 10,
+    })
+
+    expect(result.map((c) => c.profile.id)).toEqual([other.profile.id])
+  })
+
+  it("drops candidates whose gender is not in viewer's interestedIn", async () => {
+    const v = viewer({ gender: 'man', interestedIn: ['woman'] })
+    const wantedGender = candidate(1, { gender: 'woman', interestedIn: ['man'] })
+    const wrongGender = candidate(2, { gender: 'man', interestedIn: ['man'] })
+    const useCase = new GetFeedUseCase(
+      new InMemoryFeedPort([wantedGender, wrongGender]),
+      new CountingFeedExclusion(),
+    )
+
+    const result = await useCase.execute({
+      viewer: v,
+      center: ORIGIN,
+      radiusKm: 50,
+      limit: 10,
+    })
+
+    expect(result.map((c) => c.profile.id)).toEqual([wantedGender.profile.id])
+  })
+
+  it("drops candidates whose age is outside viewer's ageRange", async () => {
+    const v = viewer({ ageRange: { min: 25, max: 35 } })
+    const inRange = candidate(1, { age: 28 })
+    const outOfRange = candidate(2, { age: 50 })
+    const useCase = new GetFeedUseCase(
+      new InMemoryFeedPort([inRange, outOfRange]),
+      new CountingFeedExclusion(),
+    )
+
+    const result = await useCase.execute({
+      viewer: v,
+      center: ORIGIN,
+      radiusKm: 50,
+      limit: 10,
+    })
+
+    expect(result.map((c) => c.profile.id)).toEqual([inRange.profile.id])
+  })
+
+  it('caps the result at the requested limit even when many candidates pass', async () => {
+    const v = viewer()
+    const candidates = Array.from({ length: 10 }, (_, i) => candidate(i + 1))
+    const useCase = new GetFeedUseCase(
+      new InMemoryFeedPort(candidates),
+      new CountingFeedExclusion(),
+    )
+
+    const result = await useCase.execute({
+      viewer: v,
+      center: ORIGIN,
+      radiusKm: 50,
+      limit: 3,
+    })
+
+    expect(result).toHaveLength(3)
+    expect(result.map((c) => c.distanceKm)).toEqual([1, 2, 3])
+  })
+
+  it('over-fetches from FeedPort to compensate for post-fetch filtering', async () => {
     const v = viewer()
     const feedPort = new InMemoryFeedPort([])
     const useCase = new GetFeedUseCase(feedPort, new CountingFeedExclusion())
@@ -149,11 +245,8 @@ describe('GetFeedUseCase', () => {
       limit: 50,
     })
 
-    expect(feedPort.lastQuery).toEqual({
-      viewer: v,
-      center: { lat: 1, lng: 2 },
-      radiusKm: 25,
-      limit: 50,
-    })
+    expect(feedPort.lastQuery?.center).toEqual({ lat: 1, lng: 2 })
+    expect(feedPort.lastQuery?.radiusKm).toBe(25)
+    expect(feedPort.lastQuery?.limit).toBeGreaterThan(50)
   })
 })

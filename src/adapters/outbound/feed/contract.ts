@@ -20,14 +20,6 @@ function profile(overrides: Partial<UserProfile> = {}): UserProfile {
   }
 }
 
-function viewer(overrides: Partial<UserProfile> = {}): UserProfile {
-  return profile({
-    gender: 'man',
-    interestedIn: ['woman'],
-    ...overrides,
-  })
-}
-
 export type FeedContractSetup = {
   name: string
   setup: () => Promise<{
@@ -63,7 +55,6 @@ export function runFeedContract(cfg: FeedContractSetup): void {
 
     it('returns no candidates when none exist', async () => {
       const result = await adapter.query({
-        viewer: viewer(),
         center: ORIGIN,
         radiusKm: 10,
         limit: 100,
@@ -77,7 +68,6 @@ export function runFeedContract(cfg: FeedContractSetup): void {
       await seed([near, far])
 
       const result = await adapter.query({
-        viewer: viewer(),
         center: ORIGIN,
         radiusKm: 5,
         limit: 100,
@@ -93,95 +83,12 @@ export function runFeedContract(cfg: FeedContractSetup): void {
       await seed([far, near, mid])
 
       const result = await adapter.query({
-        viewer: viewer(),
         center: ORIGIN,
         radiusKm: 50,
         limit: 100,
       })
 
       expect(result.map((c) => c.profile.id)).toEqual([near.id, mid.id, far.id])
-    })
-
-    it("excludes profiles whose gender is not in viewer.interestedIn", async () => {
-      const wantedGender = profile({
-        gender: 'woman',
-        interestedIn: ['man'],
-        location: { lat: 0.01, lng: 0 },
-      })
-      const wrongGender = profile({
-        gender: 'man',
-        interestedIn: ['man'],
-        location: { lat: 0.02, lng: 0 },
-      })
-      await seed([wantedGender, wrongGender])
-
-      const result = await adapter.query({
-        viewer: viewer({ interestedIn: ['woman'] }),
-        center: ORIGIN,
-        radiusKm: 10,
-        limit: 100,
-      })
-
-      expect(result.map((c) => c.profile.id)).toEqual([wantedGender.id])
-    })
-
-    it("excludes profiles whose interestedIn does not include viewer's gender", async () => {
-      const interestedInMen = profile({
-        gender: 'woman',
-        interestedIn: ['man'],
-        location: { lat: 0.01, lng: 0 },
-      })
-      const interestedInWomenOnly = profile({
-        gender: 'woman',
-        interestedIn: ['woman'],
-        location: { lat: 0.02, lng: 0 },
-      })
-      await seed([interestedInMen, interestedInWomenOnly])
-
-      const result = await adapter.query({
-        viewer: viewer(),
-        center: ORIGIN,
-        radiusKm: 10,
-        limit: 100,
-      })
-
-      expect(result.map((c) => c.profile.id)).toEqual([interestedInMen.id])
-    })
-
-    it("excludes profiles whose age is outside viewer.ageRange", async () => {
-      const inRange = profile({ age: 28, location: { lat: 0.01, lng: 0 } })
-      const outOfRange = profile({ age: 50, location: { lat: 0.02, lng: 0 } })
-      await seed([inRange, outOfRange])
-
-      const result = await adapter.query({
-        viewer: viewer({ ageRange: { min: 25, max: 35 } }),
-        center: ORIGIN,
-        radiusKm: 10,
-        limit: 100,
-      })
-
-      expect(result.map((c) => c.profile.id)).toEqual([inRange.id])
-    })
-
-    it("excludes profiles whose ageRange does not include viewer.age", async () => {
-      const accepts50 = profile({
-        ageRange: { min: 18, max: 99 },
-        location: { lat: 0.01, lng: 0 },
-      })
-      const rejects50 = profile({
-        ageRange: { min: 25, max: 35 },
-        location: { lat: 0.02, lng: 0 },
-      })
-      await seed([accepts50, rejects50])
-
-      const result = await adapter.query({
-        viewer: viewer({ age: 50 }),
-        center: ORIGIN,
-        radiusKm: 10,
-        limit: 100,
-      })
-
-      expect(result.map((c) => c.profile.id)).toEqual([accepts50.id])
     })
 
     it('honors the limit parameter', async () => {
@@ -191,7 +98,6 @@ export function runFeedContract(cfg: FeedContractSetup): void {
       await seed(profiles)
 
       const result = await adapter.query({
-        viewer: viewer(),
         center: ORIGIN,
         radiusKm: 50,
         limit: 2,
@@ -200,34 +106,11 @@ export function runFeedContract(cfg: FeedContractSetup): void {
       expect(result).toHaveLength(2)
     })
 
-    it('does not return the viewer themselves', async () => {
-      const v = viewer({ location: { lat: 0.01, lng: 0 } })
-      const compatibleSelf = profile({
-        id: v.id,
-        gender: v.gender,
-        interestedIn: ['man', 'woman'],
-        ageRange: v.ageRange,
-        age: v.age,
-        location: v.location,
-      })
-      await seed([compatibleSelf])
-
-      const result = await adapter.query({
-        viewer: v,
-        center: ORIGIN,
-        radiusKm: 10,
-        limit: 100,
-      })
-
-      expect(result).toEqual([])
-    })
-
     it('reports distanceKm with reasonable accuracy', async () => {
       const target = profile({ location: { lat: 0.01, lng: 0 } })
       await seed([target])
 
       const result = await adapter.query({
-        viewer: viewer(),
         center: ORIGIN,
         radiusKm: 10,
         limit: 100,
