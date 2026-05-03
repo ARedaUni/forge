@@ -61,12 +61,29 @@ function makeDeps(principalId: UserId, overrides: Partial<HttpDeps> = {}): HttpD
 }
 
 describe('HTTP server', () => {
-  describe('GET /health', () => {
-    it('returns ok', async () => {
-      const app = createServer(makeDeps(userId()))
-      const res = await app.inject({ method: 'GET', url: '/health' })
+  describe('GET /livez', () => {
+    it('returns 200 with status ok and performs no dependency calls', async () => {
+      let userRepoCalled = false
+      let matchPortCalled = false
+      const app = createServer(
+        makeDeps(userId(), {
+          userRepo: {
+            upsert: async () => { userRepoCalled = true },
+            findById: async () => { userRepoCalled = true; return null },
+          },
+          matchPort: {
+            recordMatch: async () => { matchPortCalled = true },
+            listForUser: async () => { matchPortCalled = true; return [] },
+          },
+        }),
+      )
+
+      const res = await app.inject({ method: 'GET', url: '/livez' })
+
       expect(res.statusCode).toBe(200)
       expect(res.json()).toEqual({ status: 'ok' })
+      expect(userRepoCalled).toBe(false)
+      expect(matchPortCalled).toBe(false)
     })
   })
 
@@ -354,9 +371,9 @@ describe('HTTP server', () => {
       expect(listedFor).toBe(id)
     })
 
-    it('GET /health is public (no token required)', async () => {
+    it('GET /livez is public (no token required)', async () => {
       const app = createServer(makeDeps(userId(), { authPort: realAuth }))
-      const res = await app.inject({ method: 'GET', url: '/health' })
+      const res = await app.inject({ method: 'GET', url: '/livez' })
       expect(res.statusCode).toBe(200)
     })
   })

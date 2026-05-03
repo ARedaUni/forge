@@ -48,7 +48,7 @@ export type HttpDeps = {
   logger: Logger
 }
 
-const PUBLIC_ROUTES = new Set(['/health', '/auth/token'])
+const PUBLIC_ROUTES = new Set(['/livez', '/auth/token'])
 
 async function authMiddleware(
   authPort: AuthPort,
@@ -107,7 +107,7 @@ export function createServer(deps: HttpDeps): FastifyInstance {
     return reply.code(500).send({ error: 'internal_error' })
   })
 
-  app.get('/health', async () => ({ status: 'ok' }))
+  app.get('/livez', async () => ({ status: 'ok' }))
 
   app.post('/auth/token', async (req) => {
     const { userId } = IssueTokenRequestSchema.parse(req.body)

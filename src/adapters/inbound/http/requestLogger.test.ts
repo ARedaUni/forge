@@ -52,7 +52,7 @@ describe('HTTP request logger', () => {
     const logger = new InMemoryLoggerAdapter()
     const app = createServer(makeDeps(userId(), logger))
 
-    const res = await app.inject({ method: 'GET', url: '/health' })
+    const res = await app.inject({ method: 'GET', url: '/livez' })
 
     expect(res.statusCode).toBe(200)
     const requestLogs = logger.records.filter((r) => r.fields?.['reqId'] !== undefined)
@@ -60,7 +60,7 @@ describe('HTTP request logger', () => {
     const first = requestLogs[0]!
     expect(typeof first.fields?.['reqId']).toBe('string')
     expect(first.fields?.['method']).toBe('GET')
-    expect(first.fields?.['url']).toBe('/health')
+    expect(first.fields?.['url']).toBe('/livez')
   })
 
   it('exposes the request logger via currentLogger() inside an awaited handler', async () => {
@@ -91,8 +91,8 @@ describe('HTTP request logger', () => {
     const logger = new InMemoryLoggerAdapter()
     const app = createServer(makeDeps(userId(), logger))
 
-    await app.inject({ method: 'GET', url: '/health' })
-    await app.inject({ method: 'GET', url: '/health' })
+    await app.inject({ method: 'GET', url: '/livez' })
+    await app.inject({ method: 'GET', url: '/livez' })
 
     const reqIds = new Set(
       logger.records
