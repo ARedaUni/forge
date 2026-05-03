@@ -9,7 +9,7 @@ import {
   it,
 } from 'vitest'
 import { PostgresMatchAdapter } from '../adapters/outbound/match/postgres'
-import { InMemorySeenFilterAdapter } from '../adapters/outbound/seen-filter/inMemory'
+import { InMemoryFeedExclusionAdapter } from '../adapters/outbound/feed-exclusion/inMemory'
 import { InMemorySwipeMatchAdapter } from '../adapters/outbound/swipe-match/inMemory'
 import {
   MatchNotificationSchema,
@@ -86,12 +86,12 @@ describe('RecordSwipeUseCase — events arrive on Kafka via Debezium CDC, not vi
 
   it('emits two MatchNotification events on the notifications topic when a match is committed, with no Kafka producer in the use case', async () => {
     const swipeMatch = new InMemorySwipeMatchAdapter()
-    const seenFilter = new InMemorySeenFilterAdapter()
+    const feedExclusion = new InMemoryFeedExclusionAdapter()
     const matchPort = new PostgresMatchAdapter(pool)
 
     // Three-arg constructor — the use case has no notification port at all.
     // Any event we observe on Kafka must have come from Debezium tailing the WAL.
-    const useCase = new RecordSwipeUseCase(swipeMatch, seenFilter, matchPort)
+    const useCase = new RecordSwipeUseCase(swipeMatch, feedExclusion, matchPort)
 
     const swiper = userId()
     const target = userId()

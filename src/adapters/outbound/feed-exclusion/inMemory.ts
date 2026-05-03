@@ -1,29 +1,25 @@
-import type { SeenFilterPort } from '../../../domain/seen-filter/port'
+import type { FeedExclusionPort } from '../../../domain/feed-exclusion/port'
 import type { UserId } from '../../../domain/shared/types'
 
-export class InMemorySeenFilterAdapter implements SeenFilterPort {
-  private readonly seen = new Map<UserId, Set<UserId>>()
+export class InMemoryFeedExclusionAdapter implements FeedExclusionPort {
+  private readonly shown = new Map<UserId, Set<UserId>>()
 
-  async add(userId: UserId, candidateId: UserId): Promise<void> {
-    let set = this.seen.get(userId)
+  async markShown(viewer: UserId, candidate: UserId): Promise<void> {
+    let set = this.shown.get(viewer)
     if (set === undefined) {
       set = new Set()
-      this.seen.set(userId, set)
+      this.shown.set(viewer, set)
     }
-    set.add(candidateId)
+    set.add(candidate)
   }
 
-  async contains(userId: UserId, candidateIds: UserId[]): Promise<Set<UserId>> {
-    const userSeen = this.seen.get(userId)
-    if (userSeen === undefined) return new Set()
-    const result = new Set<UserId>()
-    for (const id of candidateIds) {
-      if (userSeen.has(id)) result.add(id)
-    }
-    return result
+  async excludeSeen(viewer: UserId, candidates: UserId[]): Promise<UserId[]> {
+    const viewerShown = this.shown.get(viewer)
+    if (viewerShown === undefined) return [...candidates]
+    return candidates.filter((id) => !viewerShown.has(id))
   }
 
   reset(): void {
-    this.seen.clear()
+    this.shown.clear()
   }
 }

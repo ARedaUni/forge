@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { InMemorySeenFilterAdapter } from '../adapters/outbound/seen-filter/inMemory'
+import { InMemoryFeedExclusionAdapter } from '../adapters/outbound/feed-exclusion/inMemory'
 import type { FeedCandidate, FeedPort, FeedQuery } from '../domain/feed/port'
 import type { Location, UserProfile } from '../domain/user/types'
 import { UserIdSchema, type UserId } from '../domain/shared/types'
@@ -45,20 +45,20 @@ class InMemoryFeedPort implements FeedPort {
   }
 }
 
-class CountingSeenFilter extends InMemorySeenFilterAdapter {
-  public containsCallCount = 0
-  override async contains(userId: UserId, candidateIds: UserId[]): Promise<Set<UserId>> {
-    this.containsCallCount += 1
-    return super.contains(userId, candidateIds)
+class CountingFeedExclusion extends InMemoryFeedExclusionAdapter {
+  public excludeSeenCallCount = 0
+  override async excludeSeen(viewer: UserId, candidates: UserId[]): Promise<UserId[]> {
+    this.excludeSeenCallCount += 1
+    return super.excludeSeen(viewer, candidates)
   }
 }
 
 describe('GetFeedUseCase', () => {
-  it('returns all candidates when none are seen', async () => {
+  it('returns all candidates when none have been shown', async () => {
     const v = viewer()
     const c1 = candidate(1)
     const c2 = candidate(2)
-    const useCase = new GetFeedUseCase(new InMemoryFeedPort([c1, c2]), new CountingSeenFilter())
+    const useCase = new GetFeedUseCase(new InMemoryFeedPort([c1, c2]), new CountingFeedExclusion())
 
     const result = await useCase.execute({
       viewer: v,
@@ -70,14 +70,14 @@ describe('GetFeedUseCase', () => {
     expect(result.map((c) => c.profile.id)).toEqual([c1.profile.id, c2.profile.id])
   })
 
-  it('filters out candidates the viewer has already seen', async () => {
+  it('filters out candidates the viewer has already been shown', async () => {
     const v = viewer()
     const c1 = candidate(1)
     const c2 = candidate(2)
     const c3 = candidate(3)
-    const seenFilter = new CountingSeenFilter()
-    await seenFilter.add(v.id, c2.profile.id)
-    const useCase = new GetFeedUseCase(new InMemoryFeedPort([c1, c2, c3]), seenFilter)
+    const feedExclusion = new CountingFeedExclusion()
+    await feedExclusion.markShown(v.id, c2.profile.id)
+    const useCase = new GetFeedUseCase(new InMemoryFeedPort([c1, c2, c3]), feedExclusion)
 
     const result = await useCase.execute({
       viewer: v,
@@ -95,7 +95,7 @@ describe('GetFeedUseCase', () => {
     const nearLast = candidate(1)
     const useCase = new GetFeedUseCase(
       new InMemoryFeedPort([farFirst, nearLast]),
-      new CountingSeenFilter(),
+      new CountingFeedExclusion(),
     )
 
     const result = await useCase.execute({
@@ -110,7 +110,7 @@ describe('GetFeedUseCase', () => {
 
   it('returns empty when FeedPort returns no candidates', async () => {
     const v = viewer()
-    const useCase = new GetFeedUseCase(new InMemoryFeedPort([]), new CountingSeenFilter())
+    const useCase = new GetFeedUseCase(new InMemoryFeedPort([]), new CountingFeedExclusion())
 
     const result = await useCase.execute({
       viewer: v,
@@ -122,10 +122,10 @@ describe('GetFeedUseCase', () => {
     expect(result).toEqual([])
   })
 
-  it('does not call SeenFilterPort when FeedPort returned nothing', async () => {
+  it('does not call FeedExclusionPort when FeedPort returned nothing', async () => {
     const v = viewer()
-    const seenFilter = new CountingSeenFilter()
-    const useCase = new GetFeedUseCase(new InMemoryFeedPort([]), seenFilter)
+    const feedExclusion = new CountingFeedExclusion()
+    const useCase = new GetFeedUseCase(new InMemoryFeedPort([]), feedExclusion)
 
     await useCase.execute({
       viewer: v,
@@ -134,13 +134,13 @@ describe('GetFeedUseCase', () => {
       limit: 10,
     })
 
-    expect(seenFilter.containsCallCount).toBe(0)
+    expect(feedExclusion.excludeSeenCallCount).toBe(0)
   })
 
   it('forwards the FeedQuery built from input to FeedPort', async () => {
     const v = viewer()
     const feedPort = new InMemoryFeedPort([])
-    const useCase = new GetFeedUseCase(feedPort, new CountingSeenFilter())
+    const useCase = new GetFeedUseCase(feedPort, new CountingFeedExclusion())
 
     await useCase.execute({
       viewer: v,

@@ -1,13 +1,13 @@
 import { createRedisClient } from '../../../infrastructure/redis/client'
-import { runSeenFilterContract } from './contract'
-import { RedisSetSeenFilterAdapter } from './redisSet-inactive'
+import { runFeedExclusionContract } from './contract'
+import { RedisSetFeedExclusionAdapter } from './redisSet-inactive'
 
-runSeenFilterContract({
+runFeedExclusionContract({
   name: 'redis-set',
   setup: async () => {
     const redis = createRedisClient({ db: 1 })
     await redis.connect()
-    const adapter = new RedisSetSeenFilterAdapter(redis)
+    const adapter = new RedisSetFeedExclusionAdapter(redis)
     return {
       adapter,
       truncate: async () => {

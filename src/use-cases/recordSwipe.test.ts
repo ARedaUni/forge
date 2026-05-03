@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { InMemoryFeedExclusionAdapter } from '../adapters/outbound/feed-exclusion/inMemory'
 import { InMemoryMatchAdapter } from '../adapters/outbound/match/inMemory'
-import { InMemorySeenFilterAdapter } from '../adapters/outbound/seen-filter/inMemory'
 import { InMemorySwipeMatchAdapter } from '../adapters/outbound/swipe-match/inMemory'
 import { UserIdSchema, type UserId } from '../domain/shared/types'
 import type { Swipe } from '../domain/swipe-match/types'
@@ -21,16 +21,16 @@ const makeSwipe = (overrides: Partial<Swipe> = {}): Swipe => ({
 type Harness = {
   useCase: RecordSwipeUseCase
   swipeMatch: InMemorySwipeMatchAdapter
-  seenFilter: InMemorySeenFilterAdapter
+  feedExclusion: InMemoryFeedExclusionAdapter
   matchPort: InMemoryMatchAdapter
 }
 
 const makeHarness = (): Harness => {
   const swipeMatch = new InMemorySwipeMatchAdapter()
-  const seenFilter = new InMemorySeenFilterAdapter()
+  const feedExclusion = new InMemoryFeedExclusionAdapter()
   const matchPort = new InMemoryMatchAdapter()
-  const useCase = new RecordSwipeUseCase(swipeMatch, seenFilter, matchPort)
-  return { useCase, swipeMatch, seenFilter, matchPort }
+  const useCase = new RecordSwipeUseCase(swipeMatch, feedExclusion, matchPort)
+  return { useCase, swipeMatch, feedExclusion, matchPort }
 }
 
 const reciprocate = async (h: Harness, swiper: UserId, target: UserId): Promise<void> => {
@@ -65,32 +65,32 @@ describe('RecordSwipeUseCase', () => {
     }
   })
 
-  it("marks the target as seen by the swiper (so they won't appear in future feeds)", async () => {
+  it("marks the target as shown to the swiper (so they won't appear in future feeds)", async () => {
     const h = makeHarness()
 
     await h.useCase.execute(makeSwipe())
 
-    const seen = await h.seenFilter.contains(SWIPER, [TARGET])
-    expect(seen).toEqual(new Set([TARGET]))
+    const unseen = await h.feedExclusion.excludeSeen(SWIPER, [TARGET])
+    expect(unseen).toEqual([])
   })
 
-  it('marks target as seen for both yes and no decisions', async () => {
+  it('marks target as shown for both yes and no decisions', async () => {
     const h = makeHarness()
 
     await h.useCase.execute(makeSwipe({ decision: 'no' }))
 
-    const seen = await h.seenFilter.contains(SWIPER, [TARGET])
-    expect(seen).toEqual(new Set([TARGET]))
+    const unseen = await h.feedExclusion.excludeSeen(SWIPER, [TARGET])
+    expect(unseen).toEqual([])
   })
 
-  it('does not mark the swiper as seen by the target (one-directional)', async () => {
+  it('does not mark the swiper as shown to the target (one-directional)', async () => {
     const h = makeHarness()
     await reciprocate(h, SWIPER, TARGET)
 
     await h.useCase.execute(makeSwipe())
 
-    const reverse = await h.seenFilter.contains(TARGET, [SWIPER])
-    expect(reverse).toEqual(new Set())
+    const unseen = await h.feedExclusion.excludeSeen(TARGET, [SWIPER])
+    expect(unseen).toEqual([SWIPER])
   })
 
   it('records the match on MatchPort when result is matched', async () => {

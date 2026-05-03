@@ -5,7 +5,7 @@ import { PinoLoggerAdapter } from './adapters/outbound/logger/pino'
 import { PostgresPostGisFeedAdapter } from './adapters/outbound/feed/postgresPostgis'
 import { PostgresMatchAdapter } from './adapters/outbound/match/postgres'
 import { LoggingNotificationDeliveryAdapter } from './adapters/outbound/notification/logging'
-import { RedisBloomSeenFilterAdapter } from './adapters/outbound/seen-filter/redisBloom'
+import { RedisBloomFeedExclusionAdapter } from './adapters/outbound/feed-exclusion/redisBloom'
 import { CassandraLwtSwipeMatchAdapter } from './adapters/outbound/swipe-match/cassandraLwt'
 import { PostgresUserRepositoryAdapter } from './adapters/outbound/user/postgres'
 import { bootstrapSchema as bootstrapCassandra } from './infrastructure/cassandra/bootstrap'
@@ -39,14 +39,14 @@ async function main(): Promise<void> {
   const feedPort = new PostgresPostGisFeedAdapter(pool)
   const userRepo = new PostgresUserRepositoryAdapter(pool)
   const matchPort = new PostgresMatchAdapter(pool)
-  const seenFilter = new RedisBloomSeenFilterAdapter(redis, {
+  const feedExclusion = new RedisBloomFeedExclusionAdapter(redis, {
     capacity: 10000,
     errorRate: 0.01,
   })
   const swipeMatch = new CassandraLwtSwipeMatchAdapter(cassandra)
 
-  const getFeed = new GetFeedUseCase(feedPort, seenFilter)
-  const recordSwipe = new RecordSwipeUseCase(swipeMatch, seenFilter, matchPort)
+  const getFeed = new GetFeedUseCase(feedPort, feedExclusion)
+  const recordSwipe = new RecordSwipeUseCase(swipeMatch, feedExclusion, matchPort)
   const authPort = new JwtAuthAdapter({
     secret: process.env['JWT_SECRET'] ?? 'change-me-in-production',
   })

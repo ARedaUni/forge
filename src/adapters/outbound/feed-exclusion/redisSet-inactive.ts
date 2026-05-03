@@ -1,26 +1,26 @@
 import type Redis from 'ioredis'
-import type { SeenFilterPort } from '../../../domain/seen-filter/port'
-import { UserIdSchema, type UserId } from '../../../domain/shared/types'
+import type { FeedExclusionPort } from '../../../domain/feed-exclusion/port'
+import type { UserId } from '../../../domain/shared/types'
 
-const keyFor = (userId: UserId): string => `seen:${userId}`
+const keyFor = (viewer: UserId): string => `seen:${viewer}`
 
-export class RedisSetSeenFilterAdapter implements SeenFilterPort {
+export class RedisSetFeedExclusionAdapter implements FeedExclusionPort {
   constructor(private readonly redis: Redis) {}
 
-  async add(userId: UserId, candidateId: UserId): Promise<void> {
-    await this.redis.sadd(keyFor(userId), candidateId)
+  async markShown(viewer: UserId, candidate: UserId): Promise<void> {
+    await this.redis.sadd(keyFor(viewer), candidate)
   }
 
-  async contains(userId: UserId, candidateIds: UserId[]): Promise<Set<UserId>> {
-    if (candidateIds.length === 0) return new Set()
-    const flags = await this.redis.smismember(keyFor(userId), ...candidateIds)
-    const result = new Set<UserId>()
+  async excludeSeen(viewer: UserId, candidates: UserId[]): Promise<UserId[]> {
+    if (candidates.length === 0) return []
+    const flags = await this.redis.smismember(keyFor(viewer), ...candidates)
+    const unseen: UserId[] = []
     flags.forEach((flag, i) => {
-      if (flag === 1) {
-        const id = candidateIds[i]
-        if (id !== undefined) result.add(UserIdSchema.parse(id))
+      if (flag !== 1) {
+        const id = candidates[i]
+        if (id !== undefined) unseen.push(id)
       }
     })
-    return result
+    return unseen
   }
 }

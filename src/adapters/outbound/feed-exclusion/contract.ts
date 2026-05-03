@@ -1,23 +1,23 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import type { SeenFilterPort } from '../../../domain/seen-filter/port'
+import type { FeedExclusionPort } from '../../../domain/feed-exclusion/port'
 import { UserIdSchema, type UserId } from '../../../domain/shared/types'
 
 const userId = (): UserId => UserIdSchema.parse(randomUUID())
 
-export type SeenFilterContractSetup = {
+export type FeedExclusionContractSetup = {
   name: string
-  knownLossy?: { falsePositives?: boolean }
+  knownLossy?: { mayExcludeUnmarked?: boolean }
   setup: () => Promise<{
-    adapter: SeenFilterPort
+    adapter: FeedExclusionPort
     truncate: () => Promise<void>
     teardown: () => Promise<void>
   }>
 }
 
-export function runSeenFilterContract(cfg: SeenFilterContractSetup): void {
-  describe(`SeenFilterPort contract — ${cfg.name}`, () => {
-    let adapter: SeenFilterPort
+export function runFeedExclusionContract(cfg: FeedExclusionContractSetup): void {
+  describe(`FeedExclusionPort contract — ${cfg.name}`, () => {
+    let adapter: FeedExclusionPort
     let truncate: () => Promise<void>
     let teardown: () => Promise<void>
 
@@ -36,64 +36,65 @@ export function runSeenFilterContract(cfg: SeenFilterContractSetup): void {
       await teardown()
     })
 
-    it('returns empty set when nothing has been added', async () => {
+    it('returns all candidates when nothing has been marked', async () => {
       const viewer = userId()
-      const result = await adapter.contains(viewer, [userId(), userId()])
-      expect(result).toEqual(new Set())
+      const a = userId()
+      const b = userId()
+      const result = await adapter.excludeSeen(viewer, [a, b])
+      expect(result).toEqual([a, b])
     })
 
-    it('returns empty set for empty candidate list', async () => {
+    it('returns empty list for empty candidate list', async () => {
       const viewer = userId()
-      await adapter.add(viewer, userId())
-      const result = await adapter.contains(viewer, [])
-      expect(result).toEqual(new Set())
+      await adapter.markShown(viewer, userId())
+      const result = await adapter.excludeSeen(viewer, [])
+      expect(result).toEqual([])
     })
 
-    it('returns added candidate after add (no false negatives)', async () => {
+    it('excludes a candidate after markShown (no false-unseen reports)', async () => {
       const viewer = userId()
-      const seen = userId()
-      await adapter.add(viewer, seen)
-      const result = await adapter.contains(viewer, [seen])
-      expect(result).toEqual(new Set([seen]))
+      const shown = userId()
+      await adapter.markShown(viewer, shown)
+      const result = await adapter.excludeSeen(viewer, [shown])
+      expect(result).toEqual([])
     })
 
-    it('returns the seen subset of the candidate list', async () => {
+    it('returns the unseen subset, preserving input order', async () => {
       const viewer = userId()
-      const seenA = userId()
-      const seenB = userId()
+      const shownA = userId()
+      const shownB = userId()
       const unseen = userId()
-      await adapter.add(viewer, seenA)
-      await adapter.add(viewer, seenB)
-      const result = await adapter.contains(viewer, [seenA, unseen, seenB])
-      expect(result).toEqual(new Set([seenA, seenB]))
+      await adapter.markShown(viewer, shownA)
+      await adapter.markShown(viewer, shownB)
+      const result = await adapter.excludeSeen(viewer, [shownA, unseen, shownB])
+      expect(result).toEqual([unseen])
     })
 
-    it('never reports a false negative across many adds', async () => {
+    it('never returns a marked candidate as unseen across many marks', async () => {
       const viewer = userId()
-      const seen = Array.from({ length: 50 }, () => userId())
-      for (const id of seen) await adapter.add(viewer, id)
-      const result = await adapter.contains(viewer, seen)
-      expect(result.size).toBe(seen.length)
-      for (const id of seen) expect(result.has(id)).toBe(true)
+      const shown = Array.from({ length: 50 }, () => userId())
+      for (const id of shown) await adapter.markShown(viewer, id)
+      const result = await adapter.excludeSeen(viewer, shown)
+      expect(result).toEqual([])
     })
 
-    it("isolates state per user (A's seen do not affect B)", async () => {
-      const userA = userId()
-      const userB = userId()
-      const seenByA = userId()
-      await adapter.add(userA, seenByA)
-      const result = await adapter.contains(userB, [seenByA])
-      expect(result).toEqual(new Set())
+    it("isolates state per viewer (A's marks do not affect B)", async () => {
+      const viewerA = userId()
+      const viewerB = userId()
+      const shownByA = userId()
+      await adapter.markShown(viewerA, shownByA)
+      const result = await adapter.excludeSeen(viewerB, [shownByA])
+      expect(result).toEqual([shownByA])
     })
 
-    if (!cfg.knownLossy?.falsePositives) {
-      it('never reports a false positive (exact adapter)', async () => {
+    if (!cfg.knownLossy?.mayExcludeUnmarked) {
+      it('never excludes an unmarked candidate (exact adapter)', async () => {
         const viewer = userId()
-        const seen = userId()
+        const shown = userId()
         const unseen = Array.from({ length: 20 }, () => userId())
-        await adapter.add(viewer, seen)
-        const result = await adapter.contains(viewer, unseen)
-        expect(result).toEqual(new Set())
+        await adapter.markShown(viewer, shown)
+        const result = await adapter.excludeSeen(viewer, unseen)
+        expect(result).toEqual(unseen)
       })
     }
   })

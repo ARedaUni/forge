@@ -1,10 +1,10 @@
-import { runSeenFilterContract } from './contract'
-import { InMemorySeenFilterAdapter } from './inMemory'
+import { runFeedExclusionContract } from './contract'
+import { InMemoryFeedExclusionAdapter } from './inMemory'
 
-runSeenFilterContract({
+runFeedExclusionContract({
   name: 'in-memory',
   setup: async () => {
-    const adapter = new InMemorySeenFilterAdapter()
+    const adapter = new InMemoryFeedExclusionAdapter()
     return {
       adapter,
       truncate: async () => adapter.reset(),

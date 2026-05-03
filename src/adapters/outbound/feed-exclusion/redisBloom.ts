@@ -1,6 +1,6 @@
 import type Redis from 'ioredis'
-import type { SeenFilterPort } from '../../../domain/seen-filter/port'
-import { UserIdSchema, type UserId } from '../../../domain/shared/types'
+import type { FeedExclusionPort } from '../../../domain/feed-exclusion/port'
+import type { UserId } from '../../../domain/shared/types'
 
 export type RedisBloomConfig = {
   capacity: number
@@ -12,9 +12,9 @@ const DEFAULT_CONFIG: RedisBloomConfig = {
   errorRate: 0.01,
 }
 
-const keyFor = (userId: UserId): string => `seen-bloom:${userId}`
+const keyFor = (viewer: UserId): string => `seen-bloom:${viewer}`
 
-export class RedisBloomSeenFilterAdapter implements SeenFilterPort {
+export class RedisBloomFeedExclusionAdapter implements FeedExclusionPort {
   private readonly capacity: number
   private readonly errorRate: number
 
@@ -26,33 +26,33 @@ export class RedisBloomSeenFilterAdapter implements SeenFilterPort {
     this.errorRate = config.errorRate ?? DEFAULT_CONFIG.errorRate
   }
 
-  async add(userId: UserId, candidateId: UserId): Promise<void> {
+  async markShown(viewer: UserId, candidate: UserId): Promise<void> {
     await this.redis.call(
       'BF.INSERT',
-      keyFor(userId),
+      keyFor(viewer),
       'CAPACITY',
       String(this.capacity),
       'ERROR',
       String(this.errorRate),
       'ITEMS',
-      candidateId,
+      candidate,
     )
   }
 
-  async contains(userId: UserId, candidateIds: UserId[]): Promise<Set<UserId>> {
-    if (candidateIds.length === 0) return new Set()
+  async excludeSeen(viewer: UserId, candidates: UserId[]): Promise<UserId[]> {
+    if (candidates.length === 0) return []
     const flags = (await this.redis.call(
       'BF.MEXISTS',
-      keyFor(userId),
-      ...candidateIds,
+      keyFor(viewer),
+      ...candidates,
     )) as number[]
-    const result = new Set<UserId>()
+    const unseen: UserId[] = []
     flags.forEach((flag, i) => {
-      if (flag === 1) {
-        const id = candidateIds[i]
-        if (id !== undefined) result.add(UserIdSchema.parse(id))
+      if (flag !== 1) {
+        const id = candidates[i]
+        if (id !== undefined) unseen.push(id)
       }
     })
-    return result
+    return unseen
   }
 }
