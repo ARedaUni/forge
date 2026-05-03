@@ -8,6 +8,7 @@ import type { Gender, UserProfile } from '../../../domain/user/types'
 import { InMemoryLoggerAdapter } from '../../outbound/logger/inMemory'
 import type { GetFeedUseCase } from '../../../use-cases/getFeed'
 import type { RecordSwipeUseCase } from '../../../use-cases/recordSwipe'
+import { currentLogger } from '../../../infrastructure/observability/requestContext'
 import { createServer, type HttpDeps } from './server'
 
 const userId = (): UserId => UserIdSchema.parse(randomUUID())
@@ -60,6 +61,30 @@ describe('HTTP request logger', () => {
     expect(typeof first.fields?.['reqId']).toBe('string')
     expect(first.fields?.['method']).toBe('GET')
     expect(first.fields?.['url']).toBe('/health')
+  })
+
+  it('exposes the request logger via currentLogger() inside an awaited handler', async () => {
+    const logger = new InMemoryLoggerAdapter()
+    const app = createServer(makeDeps(userId(), logger))
+
+    app.get('/__test/als', async () => {
+      await Promise.resolve()
+      currentLogger().info('inside handler', { stage: 'awaited' })
+      return { ok: true }
+    })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/__test/als',
+      headers: { authorization: 'Bearer noop-token' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const handlerLog = logger.records.find((r) => r.message === 'inside handler')
+    expect(handlerLog).toBeDefined()
+    expect(typeof handlerLog?.fields?.['reqId']).toBe('string')
+    expect(handlerLog?.fields?.['stage']).toBe('awaited')
+    expect(handlerLog?.fields?.['url']).toBe('/__test/als')
   })
 
   it('uses a distinct reqId per request', async () => {

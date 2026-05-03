@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { AuthError, type AuthPort } from '../../../domain/auth/port'
 import type { MatchPort } from '../../../domain/match/port'
 import type { Logger } from '../../../domain/observability/logger'
+import { enterLoggerContext } from '../../../infrastructure/observability/requestContext'
 import { UserIdSchema, type UserId } from '../../../domain/shared/types'
 import { SwipeDecisionSchema } from '../../../domain/swipe-match/types'
 import type { UserRepositoryPort } from '../../../domain/user/port'
@@ -87,6 +88,7 @@ export function createServer(deps: HttpDeps): FastifyInstance {
     const reqId = randomUUID()
     const child = deps.logger.child({ reqId, method: req.method, url: req.url })
     req.logger = child
+    enterLoggerContext(child)
     child.info('request received')
   })
 
