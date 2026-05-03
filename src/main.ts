@@ -2,13 +2,12 @@ import { createServer } from './adapters/inbound/http/server'
 import { JwtAuthAdapter } from './adapters/outbound/auth/jwt'
 import { PostgresPostGisFeedAdapter } from './adapters/outbound/feed/postgresPostgis'
 import { PostgresMatchAdapter } from './adapters/outbound/match/postgres'
-import { KafkaNotificationAdapter } from './adapters/outbound/notification/kafka'
 import { RedisBloomSeenFilterAdapter } from './adapters/outbound/seen-filter/redisBloom'
 import { CassandraLwtSwipeMatchAdapter } from './adapters/outbound/swipe-match/cassandraLwt'
 import { PostgresUserRepositoryAdapter } from './adapters/outbound/user/postgres'
 import { bootstrapSchema as bootstrapCassandra } from './infrastructure/cassandra/bootstrap'
 import { createCassandraClient } from './infrastructure/cassandra/client'
-import { createKafka } from './infrastructure/kafka/client'
+import { registerMatchesConnector } from './infrastructure/debezium/registerConnector'
 import { bootstrapPostgres } from './infrastructure/postgres/bootstrap'
 import { createPostgresPool } from './infrastructure/postgres/client'
 import { createRedisClient } from './infrastructure/redis/client'
@@ -19,16 +18,18 @@ async function main(): Promise<void> {
   const pool = createPostgresPool()
   await bootstrapPostgres(pool)
 
+  // Match notifications are produced by Debezium reading the Postgres WAL —
+  // the application never writes to Kafka directly. This eliminates the
+  // dual-write hazard that 14a documented.
+  const connectUrl = process.env['CONNECT_URL'] ?? 'http://localhost:8083'
+  await registerMatchesConnector(connectUrl)
+
   const redis = createRedisClient({ db: 0 })
   await redis.connect()
 
   const cassandra = createCassandraClient()
   await cassandra.connect()
   await bootstrapCassandra(cassandra)
-
-  const kafka = createKafka('tinderclone')
-  const notificationPort = new KafkaNotificationAdapter(kafka)
-  await notificationPort.connect()
 
   const feedPort = new PostgresPostGisFeedAdapter(pool)
   const userRepo = new PostgresUserRepositoryAdapter(pool)
@@ -40,12 +41,7 @@ async function main(): Promise<void> {
   const swipeMatch = new CassandraLwtSwipeMatchAdapter(cassandra)
 
   const getFeed = new GetFeedUseCase(feedPort, seenFilter)
-  const recordSwipe = new RecordSwipeUseCase(
-    swipeMatch,
-    seenFilter,
-    matchPort,
-    notificationPort,
-  )
+  const recordSwipe = new RecordSwipeUseCase(swipeMatch, seenFilter, matchPort)
   const authPort = new JwtAuthAdapter({
     secret: process.env['JWT_SECRET'] ?? 'change-me-in-production',
   })
@@ -57,7 +53,6 @@ async function main(): Promise<void> {
 
   const shutdown = async (): Promise<void> => {
     await server.close()
-    await notificationPort.disconnect()
     await redis.quit()
     await cassandra.shutdown()
     await pool.end()
