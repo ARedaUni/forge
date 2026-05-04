@@ -39,6 +39,25 @@ export class NotificationConsumer {
     const consumer = this.kafka.consumer({ groupId: this.groupId })
     await consumer.connect()
     await consumer.subscribe({ topic: this.topic, fromBeginning: false })
+
+    // `consumer.run()` is fire-and-forget — it returns once `eachMessage` is
+    // registered, but the consumer may not yet have joined the group or been
+    // assigned partitions (KafkaJS issue tulios/kafkajs#1629). If a producer
+    // writes a message in that window, the "latest" offset reset can skip it.
+    // Wait for GROUP_JOIN so callers can rely on `start()` resolving only when
+    // the consumer is genuinely ready to receive — its payload includes
+    // `memberAssignment`, so partition assignment is part of this signal.
+    const groupJoined = new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('NotificationConsumer.start: GROUP_JOIN timed out'))
+      }, 30_000)
+      const remove = consumer.on(consumer.events.GROUP_JOIN, () => {
+        clearTimeout(timeout)
+        remove()
+        resolve()
+      })
+    })
+
     await consumer.run({
       eachMessage: async ({ message }) => {
         if (!message.value) return
@@ -74,6 +93,8 @@ export class NotificationConsumer {
         }
       },
     })
+
+    await groupJoined
     this.consumer = consumer
   }
 
