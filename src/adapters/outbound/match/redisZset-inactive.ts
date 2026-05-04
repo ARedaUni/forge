@@ -1,9 +1,5 @@
 import type Redis from 'ioredis'
-import type {
-  ListMatchesOptions,
-  MatchEntry,
-  MatchPort,
-} from '../../../core/match/port'
+import type { ListMatchesOptions, MatchEntry, MatchPort } from '../../../core/match/port'
 import { UserIdSchema, type UserId } from '../../../core/shared/types'
 
 const keyFor = (userId: UserId): string => `matches:${userId}`
@@ -11,11 +7,7 @@ const keyFor = (userId: UserId): string => `matches:${userId}`
 export class RedisZsetMatchAdapter implements MatchPort {
   constructor(private readonly redis: Redis) {}
 
-  async recordMatch(
-    userA: UserId,
-    userB: UserId,
-    matchedAt: Date,
-  ): Promise<void> {
+  async recordMatch(userA: UserId, userB: UserId, matchedAt: Date): Promise<void> {
     const score = matchedAt.getTime()
     await Promise.all([
       this.redis.zadd(keyFor(userA), 'NX', score, userB),

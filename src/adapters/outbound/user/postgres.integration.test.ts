@@ -43,10 +43,9 @@ describe('PostgresUserRepositoryAdapter', () => {
     const updated = { ...makeProfile(id), age: 30 }
     await expect(adapter.save(updated)).resolves.toBeUndefined()
 
-    const row = await pool.query<{ age: number }>(
-      'SELECT age FROM users WHERE id = $1',
-      [id],
-    )
+    const row = await pool.query<{ age: number }>('SELECT age FROM users WHERE id = $1', [
+      id,
+    ])
     expect(row.rows[0]?.age).toBe(30)
   })
 

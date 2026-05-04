@@ -1,8 +1,4 @@
-import type {
-  ListMatchesOptions,
-  MatchEntry,
-  MatchPort,
-} from '../../../core/match/port'
+import type { ListMatchesOptions, MatchEntry, MatchPort } from '../../../core/match/port'
 import type { UserId } from '../../../core/shared/types'
 
 const pairKey = (a: UserId, b: UserId): string => {

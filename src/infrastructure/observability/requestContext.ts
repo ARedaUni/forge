@@ -14,7 +14,9 @@ export function enterLoggerContext(logger: Logger): void {
 export function currentLogger(): Logger {
   const logger = als.getStore()
   if (!logger) {
-    throw new Error('currentLogger() called with no logger context — wrap the call in runWithLogger or enterLoggerContext')
+    throw new Error(
+      'currentLogger() called with no logger context — wrap the call in runWithLogger or enterLoggerContext',
+    )
   }
   return logger
 }

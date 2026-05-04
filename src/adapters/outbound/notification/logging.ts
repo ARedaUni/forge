@@ -2,9 +2,7 @@ import type { Logger } from '../../../core/observability/logger'
 import type { NotificationDeliveryPort } from '../../../core/notification/port'
 import type { MatchNotification } from '../../../core/notification/types'
 
-export class LoggingNotificationDeliveryAdapter
-  implements NotificationDeliveryPort
-{
+export class LoggingNotificationDeliveryAdapter implements NotificationDeliveryPort {
   constructor(private readonly logger: Logger) {}
 
   async deliver(notification: MatchNotification): Promise<void> {

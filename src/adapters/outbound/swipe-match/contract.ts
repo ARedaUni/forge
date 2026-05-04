@@ -70,7 +70,9 @@ export function runSwipeMatchContract(cfg: SwipeMatchContractSetup): void {
 
       expect(second.kind).toBe('matched')
       if (second.kind === 'matched') {
-        expect(new Set([second.match.userAId, second.match.userBId])).toEqual(new Set([a, b]))
+        expect(new Set([second.match.userAId, second.match.userBId])).toEqual(
+          new Set([a, b]),
+        )
       }
     })
 
@@ -83,8 +85,18 @@ export function runSwipeMatchContract(cfg: SwipeMatchContractSetup): void {
         const now = new Date()
 
         const swipes = pairs.flatMap(({ a, b }) => [
-          adapter.recordSwipe({ swiperId: a, targetId: b, decision: 'yes', createdAt: now }),
-          adapter.recordSwipe({ swiperId: b, targetId: a, decision: 'yes', createdAt: now }),
+          adapter.recordSwipe({
+            swiperId: a,
+            targetId: b,
+            decision: 'yes',
+            createdAt: now,
+          }),
+          adapter.recordSwipe({
+            swiperId: b,
+            targetId: a,
+            decision: 'yes',
+            createdAt: now,
+          }),
         ])
 
         const results = await Promise.all(swipes)

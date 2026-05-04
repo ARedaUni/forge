@@ -2,7 +2,9 @@ import type { LogFields, Logger } from '../../../core/observability/logger'
 import { runDeliveryContract } from './contract'
 import { LoggingNotificationDeliveryAdapter } from './logging'
 
-const captureLogger = (sink: Array<{ message: string; fields: LogFields | undefined }>): Logger => ({
+const captureLogger = (
+  sink: Array<{ message: string; fields: LogFields | undefined }>,
+): Logger => ({
   debug: () => undefined,
   info: (message, fields) => {
     sink.push({ message, fields })

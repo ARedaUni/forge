@@ -1,9 +1,5 @@
 import type pg from 'pg'
-import type {
-  ListMatchesOptions,
-  MatchEntry,
-  MatchPort,
-} from '../../../core/match/port'
+import type { ListMatchesOptions, MatchEntry, MatchPort } from '../../../core/match/port'
 import { UserIdSchema, type UserId } from '../../../core/shared/types'
 
 const RECORD_SQL = `
@@ -27,11 +23,7 @@ type Row = {
 export class PostgresMatchAdapter implements MatchPort {
   constructor(private readonly pool: pg.Pool) {}
 
-  async recordMatch(
-    userA: UserId,
-    userB: UserId,
-    matchedAt: Date,
-  ): Promise<void> {
+  async recordMatch(userA: UserId, userB: UserId, matchedAt: Date): Promise<void> {
     await this.pool.query(RECORD_SQL, [userA, userB, matchedAt])
   }
 

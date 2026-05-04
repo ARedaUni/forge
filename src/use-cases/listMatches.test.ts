@@ -10,7 +10,7 @@ const OLDEST = new Date('2026-04-01T00:00:00Z')
 const NEWEST = new Date('2026-04-29T00:00:00Z')
 
 describe('ListMatchesUseCase', () => {
-  it('returns the viewer\'s matches newest-first', async () => {
+  it("returns the viewer's matches newest-first", async () => {
     const matchPort = new InMemoryMatchAdapter()
     await matchPort.recordMatch(VIEWER, OTHER_A, OLDEST)
     await matchPort.recordMatch(VIEWER, OTHER_B, NEWEST)

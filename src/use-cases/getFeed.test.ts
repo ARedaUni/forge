@@ -21,7 +21,10 @@ function viewer(overrides: Partial<UserProfile> = {}): UserProfile {
   }
 }
 
-function candidate(distanceKm: number, profileOverrides: Partial<UserProfile> = {}): FeedCandidate {
+function candidate(
+  distanceKm: number,
+  profileOverrides: Partial<UserProfile> = {},
+): FeedCandidate {
   return {
     profile: {
       id: userId(),
@@ -58,7 +61,10 @@ describe('GetFeedUseCase', () => {
     const v = viewer()
     const c1 = candidate(1)
     const c2 = candidate(2)
-    const useCase = new GetFeedUseCase(new InMemoryFeedPort([c1, c2]), new CountingFeedExclusion())
+    const useCase = new GetFeedUseCase(
+      new InMemoryFeedPort([c1, c2]),
+      new CountingFeedExclusion(),
+    )
 
     const result = await useCase.execute({
       viewer: v,
@@ -110,7 +116,10 @@ describe('GetFeedUseCase', () => {
 
   it('returns empty when FeedPort returns no candidates', async () => {
     const v = viewer()
-    const useCase = new GetFeedUseCase(new InMemoryFeedPort([]), new CountingFeedExclusion())
+    const useCase = new GetFeedUseCase(
+      new InMemoryFeedPort([]),
+      new CountingFeedExclusion(),
+    )
 
     const result = await useCase.execute({
       viewer: v,
@@ -141,7 +150,10 @@ describe('GetFeedUseCase', () => {
     const v = viewer({ gender: 'man', interestedIn: ['woman'] })
     const incompatible = candidate(1, { gender: 'man', interestedIn: ['man'] })
     const feedExclusion = new CountingFeedExclusion()
-    const useCase = new GetFeedUseCase(new InMemoryFeedPort([incompatible]), feedExclusion)
+    const useCase = new GetFeedUseCase(
+      new InMemoryFeedPort([incompatible]),
+      feedExclusion,
+    )
 
     const result = await useCase.execute({
       viewer: v,
@@ -154,7 +166,7 @@ describe('GetFeedUseCase', () => {
     expect(feedExclusion.excludeSeenCallCount).toBe(0)
   })
 
-  it("drops the viewer themselves when FeedPort returns them", async () => {
+  it('drops the viewer themselves when FeedPort returns them', async () => {
     const v = viewer()
     const selfCandidate: FeedCandidate = {
       profile: { ...v },

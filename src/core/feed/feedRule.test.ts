@@ -101,4 +101,3 @@ describe('matchesFilters', () => {
     expect(matchesFilters(target, viewer)).toBe(true)
   })
 })
-

@@ -2,7 +2,11 @@ import { types, type Client } from 'cassandra-driver'
 import type { UserId } from '../../../core/shared/types'
 import { evaluateSwipe } from '../../../core/swipe-match/matchRule'
 import type { SwipeMatchPort, SwipeResult } from '../../../core/swipe-match/port'
-import { SwipeDecisionSchema, type Swipe, type SwipeDecision } from '../../../core/swipe-match/types'
+import {
+  SwipeDecisionSchema,
+  type Swipe,
+  type SwipeDecision,
+} from '../../../core/swipe-match/types'
 import { KEYSPACE } from '../../../infrastructure/cassandra/bootstrap'
 
 const INSERT_LWT = `
@@ -36,11 +40,10 @@ export class CassandraLwtSwipeMatchAdapter implements SwipeMatchPort {
       { prepare: true, serialConsistency: types.consistencies.serial },
     )
 
-    const partition = await this.client.execute(
-      SELECT_PARTITION,
-      [lowId, highId],
-      { prepare: true, consistency: types.consistencies.serial },
-    )
+    const partition = await this.client.execute(SELECT_PARTITION, [lowId, highId], {
+      prepare: true,
+      consistency: types.consistencies.serial,
+    })
 
     const inverseDecision = findInverseDecision(partition.rows, swipe.swiperId)
     return evaluateSwipe(swipe, inverseDecision)

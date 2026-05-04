@@ -34,7 +34,10 @@ function rowToProfile(row: Row): UserProfile {
     id: UserIdSchema.parse(row.id),
     age: row.age,
     gender: GenderSchema.parse(row.gender),
-    interestedIn: row.interested_in.map((g) => GenderSchema.parse(g)) as [Gender, ...Gender[]],
+    interestedIn: row.interested_in.map((g) => GenderSchema.parse(g)) as [
+      Gender,
+      ...Gender[],
+    ],
     ageRange: { min: row.age_min, max: row.age_max },
     location: { lat: row.lat, lng: row.lng },
   }

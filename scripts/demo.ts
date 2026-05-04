@@ -13,9 +13,7 @@ import { randomUUID } from 'node:crypto'
 // Server binds to 127.0.0.1 only — using IPv4 literal avoids Node fetch
 // resolving `localhost` to ::1 and getting an empty reply.
 const BASE_URL = process.env['DEMO_BASE_URL'] ?? 'http://127.0.0.1:3000'
-const KAFKA_BROKERS = (process.env['KAFKA_BROKERS'] ?? 'localhost:9092').split(
-  ',',
-)
+const KAFKA_BROKERS = (process.env['KAFKA_BROKERS'] ?? 'localhost:9092').split(',')
 
 type Json = Record<string, unknown>
 
@@ -51,10 +49,7 @@ async function issueToken(userId: string): Promise<string> {
   return token as string
 }
 
-async function upsertProfile(
-  token: string,
-  profile: Json,
-): Promise<void> {
+async function upsertProfile(token: string, profile: Json): Promise<void> {
   const { status, body } = await call('POST', '/profiles', {
     token,
     body: profile,

@@ -16,7 +16,9 @@ export const defaultPostgresConfig: PostgresConfig = {
   database: process.env['POSTGRES_DB'] ?? 'tinderclone',
 }
 
-export function createPostgresPool(config: PostgresConfig = defaultPostgresConfig): pg.Pool {
+export function createPostgresPool(
+  config: PostgresConfig = defaultPostgresConfig,
+): pg.Pool {
   return new pg.Pool({
     host: config.host,
     port: config.port,

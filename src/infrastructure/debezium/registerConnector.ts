@@ -39,16 +39,14 @@ const MATCHES_CONNECTOR_CONFIG: Readonly<Record<string, string>> = {
   'message.key.columns': 'public.matches:user_id',
 
   // SMT chain: envelope → bare row → rename topic → add type → rename fields.
-  'transforms': 'unwrap,route,addType,renameFields',
+  transforms: 'unwrap,route,addType,renameFields',
   'transforms.unwrap.type': 'io.debezium.transforms.ExtractNewRecordState',
   'transforms.unwrap.drop.tombstones': 'true',
   'transforms.unwrap.delete.handling.mode': 'drop',
-  'transforms.route.type':
-    'org.apache.kafka.connect.transforms.RegexRouter',
+  'transforms.route.type': 'org.apache.kafka.connect.transforms.RegexRouter',
   'transforms.route.regex': 'tinderclone\\.public\\.matches',
   'transforms.route.replacement': 'notifications',
-  'transforms.addType.type':
-    'org.apache.kafka.connect.transforms.InsertField$Value',
+  'transforms.addType.type': 'org.apache.kafka.connect.transforms.InsertField$Value',
   'transforms.addType.static.field': 'type',
   'transforms.addType.static.value': 'match',
   'transforms.renameFields.type':
@@ -57,9 +55,7 @@ const MATCHES_CONNECTOR_CONFIG: Readonly<Record<string, string>> = {
     'user_id:userId,other_user_id:otherUserId,matched_at:matchedAt',
 }
 
-export async function registerMatchesConnector(
-  connectUrl: string,
-): Promise<void> {
+export async function registerMatchesConnector(connectUrl: string): Promise<void> {
   const putUrl = `${connectUrl}/connectors/${CONNECTOR_NAME}/config`
   const res = await fetch(putUrl, {
     method: 'PUT',
@@ -68,9 +64,7 @@ export async function registerMatchesConnector(
   })
   if (!res.ok) {
     const body = await res.text()
-    throw new Error(
-      `failed to register ${CONNECTOR_NAME}: ${res.status} ${body}`,
-    )
+    throw new Error(`failed to register ${CONNECTOR_NAME}: ${res.status} ${body}`)
   }
 
   await waitForRunning(connectUrl)
@@ -79,17 +73,13 @@ export async function registerMatchesConnector(
 async function waitForRunning(connectUrl: string): Promise<void> {
   const deadline = Date.now() + 30_000
   while (Date.now() < deadline) {
-    const res = await fetch(
-      `${connectUrl}/connectors/${CONNECTOR_NAME}/status`,
-    )
+    const res = await fetch(`${connectUrl}/connectors/${CONNECTOR_NAME}/status`)
     if (res.ok) {
       const status = (await res.json()) as ConnectorStatus
       const taskState = status.tasks[0]?.state
       if (status.connector.state === 'FAILED' || taskState === 'FAILED') {
         const trace = status.tasks[0]?.trace ?? '(no task trace)'
-        throw new Error(
-          `${CONNECTOR_NAME} entered FAILED state: ${trace}`,
-        )
+        throw new Error(`${CONNECTOR_NAME} entered FAILED state: ${trace}`)
       }
       if (status.connector.state === 'RUNNING' && taskState === 'RUNNING') {
         return
@@ -97,7 +87,5 @@ async function waitForRunning(connectUrl: string): Promise<void> {
     }
     await new Promise((r) => setTimeout(r, 500))
   }
-  throw new Error(
-    `${CONNECTOR_NAME} did not reach RUNNING within 30s`,
-  )
+  throw new Error(`${CONNECTOR_NAME} did not reach RUNNING within 30s`)
 }

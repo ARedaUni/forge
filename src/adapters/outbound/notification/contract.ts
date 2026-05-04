@@ -20,7 +20,9 @@ const A = UserIdSchema.parse('00000000-0000-4000-8000-00000000000a')
 const B = UserIdSchema.parse('00000000-0000-4000-8000-00000000000b')
 const AT = new Date('2026-05-03T12:00:00.000Z')
 
-const make = (overrides: Partial<{ userId: string; otherUserId: string; matchedAt: Date }> = {}) =>
+const make = (
+  overrides: Partial<{ userId: string; otherUserId: string; matchedAt: Date }> = {},
+) =>
   MatchNotificationSchema.parse({
     type: 'match',
     userId: overrides.userId ?? A,

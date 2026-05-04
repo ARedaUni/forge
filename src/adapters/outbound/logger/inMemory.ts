@@ -27,7 +27,11 @@ export class InMemoryLoggerAdapter implements Logger {
     return new InMemoryLoggerAdapter(this.records, merged)
   }
 
-  private write(level: LogRecord['level'], message: string, fields: LogFields | undefined): void {
+  private write(
+    level: LogRecord['level'],
+    message: string,
+    fields: LogFields | undefined,
+  ): void {
     const merged = this.merge(fields)
     this.records.push({ level, message, fields: merged })
   }

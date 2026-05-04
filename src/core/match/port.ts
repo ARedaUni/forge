@@ -12,8 +12,5 @@ export type ListMatchesOptions = {
 
 export interface MatchPort {
   recordMatch(userA: UserId, userB: UserId, matchedAt: Date): Promise<void>
-  listForUser(
-    userId: UserId,
-    options?: ListMatchesOptions,
-  ): Promise<MatchEntry[]>
+  listForUser(userId: UserId, options?: ListMatchesOptions): Promise<MatchEntry[]>
 }

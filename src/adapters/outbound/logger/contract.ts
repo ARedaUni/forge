@@ -16,9 +16,7 @@ export function runLoggerContract(cfg: LoggerContractSetup): void {
       (level) => {
         const { logger, records } = cfg.setup()
         logger[level]('hello')
-        expect(records()).toEqual([
-          { level, message: 'hello', fields: undefined },
-        ])
+        expect(records()).toEqual([{ level, message: 'hello', fields: undefined }])
       },
     )
 

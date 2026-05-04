@@ -2,7 +2,11 @@ import type Redis from 'ioredis'
 import type { UserId } from '../../../core/shared/types'
 import { evaluateSwipe } from '../../../core/swipe-match/matchRule'
 import type { SwipeMatchPort, SwipeResult } from '../../../core/swipe-match/port'
-import { SwipeDecisionSchema, type Swipe, type SwipeDecision } from '../../../core/swipe-match/types'
+import {
+  SwipeDecisionSchema,
+  type Swipe,
+  type SwipeDecision,
+} from '../../../core/swipe-match/types'
 
 const SCRIPT = `
 local swiper = ARGV[1]
@@ -40,7 +44,14 @@ export class RedisLuaSwipeMatchAdapter implements SwipeMatchPort {
     }
 
     const key = `swipe:${lowId}:${highId}`
-    const raw = await this.client.eval(SCRIPT, 1, key, swipe.swiperId, lowId, swipe.decision)
+    const raw = await this.client.eval(
+      SCRIPT,
+      1,
+      key,
+      swipe.swiperId,
+      lowId,
+      swipe.decision,
+    )
 
     const inverseDecision = parseInverseDecision(raw)
     return evaluateSwipe(swipe, inverseDecision)

@@ -17,7 +17,7 @@ const userId = (): UserId => UserIdSchema.parse(randomUUID())
 const profileFor = (id: UserId): UserProfile => ({
   id,
   age: 28,
-  gender: 'woman' as Gender,
+  gender: 'woman',
   interestedIn: ['man'] as [Gender],
   ageRange: { min: 25, max: 35 },
   location: { lat: 51.5074, lng: -0.1278 },
@@ -28,7 +28,11 @@ const noopAuthFor = (id: UserId): AuthPort => ({
   verifyCredential: async () => id,
 })
 
-function makeDeps(principal: UserId, logger: InMemoryLoggerAdapter, overrides: Partial<HttpDeps> = {}): HttpDeps {
+function makeDeps(
+  principal: UserId,
+  logger: InMemoryLoggerAdapter,
+  overrides: Partial<HttpDeps> = {},
+): HttpDeps {
   return {
     getFeed: { execute: async () => [] } as unknown as GetFeedUseCase,
     recordSwipe: {
@@ -86,5 +90,4 @@ describe('HTTP request logger', () => {
     expect(handlerLog?.fields?.['stage']).toBe('awaited')
     expect(handlerLog?.fields?.['url']).toBe('/__test/als')
   })
-
 })

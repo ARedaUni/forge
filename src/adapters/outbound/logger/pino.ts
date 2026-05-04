@@ -5,7 +5,10 @@ export class PinoLoggerAdapter implements Logger {
   private readonly p: PinoLogger
 
   constructor(arg: PinoLogger | LoggerOptions = {}) {
-    if (typeof (arg as PinoLogger).child === 'function' && typeof (arg as PinoLogger).info === 'function') {
+    if (
+      typeof (arg as PinoLogger).child === 'function' &&
+      typeof (arg as PinoLogger).info === 'function'
+    ) {
       this.p = arg as PinoLogger
     } else {
       this.p = pino(arg as LoggerOptions)

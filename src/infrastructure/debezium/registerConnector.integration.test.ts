@@ -1,27 +1,15 @@
 import { randomUUID } from 'node:crypto'
 import type { Consumer } from 'kafkajs'
-import {
-  afterAll,
-  beforeAll,
-  describe,
-  expect,
-  it,
-} from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   MatchNotificationSchema,
   type MatchNotification,
 } from '../../core/notification/types'
 import { UserIdSchema } from '../../core/shared/types'
-import {
-  bootstrapPostgres,
-  truncateMatches,
-} from '../postgres/bootstrap'
+import { bootstrapPostgres, truncateMatches } from '../postgres/bootstrap'
 import { createPostgresPool } from '../postgres/client'
 import { createKafka } from '../kafka/client'
-import {
-  CONNECTOR_NAME,
-  registerMatchesConnector,
-} from './registerConnector'
+import { CONNECTOR_NAME, registerMatchesConnector } from './registerConnector'
 
 const CONNECT_URL = process.env['CONNECT_URL'] ?? 'http://localhost:8083'
 
@@ -42,9 +30,7 @@ describe('registerMatchesConnector', () => {
   it('PUTs the matches connector config and waits until it reports RUNNING', async () => {
     await registerMatchesConnector(CONNECT_URL)
 
-    const res = await fetch(
-      `${CONNECT_URL}/connectors/${CONNECTOR_NAME}/status`,
-    )
+    const res = await fetch(`${CONNECT_URL}/connectors/${CONNECTOR_NAME}/status`)
     expect(res.status).toBe(200)
     const body = (await res.json()) as {
       connector: { state: string }
@@ -79,9 +65,7 @@ describe('matches CDC adapter — wire-format contract', () => {
     await admin.connect()
     await admin
       .createTopics({
-        topics: [
-          { topic: 'notifications', numPartitions: 3, replicationFactor: 1 },
-        ],
+        topics: [{ topic: 'notifications', numPartitions: 3, replicationFactor: 1 }],
       })
       .catch(() => {})
     await admin.disconnect()

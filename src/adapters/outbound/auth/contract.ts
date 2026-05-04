@@ -29,7 +29,9 @@ export function runAuthContract(cfg: AuthContractSetup): void {
 
     it('verifyCredential throws AuthError for a tampered credential', async () => {
       const adapter = cfg.setup()
-      await expect(adapter.verifyCredential('not.a.valid.credential')).rejects.toThrow(AuthError)
+      await expect(adapter.verifyCredential('not.a.valid.credential')).rejects.toThrow(
+        AuthError,
+      )
     })
 
     it('verifyCredential throws AuthError for a credential signed with a different secret', async () => {
