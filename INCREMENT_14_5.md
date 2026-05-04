@@ -15,9 +15,12 @@
 | Metrics (prom-client) | no port + thin domain helper module | centralises label cardinality without inventing a `MetricsPort` |
 | Health checks | yes | each adapter exposes `ping()`; `/readyz` aggregates |
 
-Per-request correlation via `AsyncLocalStorage`: Fastify hook mints a child
-logger with `reqId` (and later `traceId`), code calls `currentLogger()` —
-no threading through call signatures.
+**Wide-events school (Majors / Sigelman / Morrell):** the request span is the
+unit of telemetry. One root span per request, enriched with attributes as
+work progresses; logs and metrics derive from the same dimensions. Use cases
+stay free of observability imports — the HTTP adapter enriches the active
+span/log from use-case results via `currentLogger()` and (14.5c)
+`enrichRequest()`, both backed by `AsyncLocalStorage` / OTel context.
 
 ---
 
@@ -44,18 +47,38 @@ no threading through call signatures.
 - Per-adapter: histogram around outbound calls (cassandra/pg/redis).
 - `GET /metrics` (public, no auth) returns Prometheus text format.
 
-## 14.5c — Tracing
+## 14.5c — Tracing (wide-events school)
+
+Following Majors / Sigelman / Morrell: **the request span is the wide event**.
+One root span per request, enriched with high-cardinality attributes as work
+progresses. No child spans for in-process business steps — those become
+attributes on the root. Cross-cutting stays external: use cases never import
+the tracer.
 
 - `infrastructure/observability/otel.ts` — SDK init, **must run before any
   app import**. Auto-instrumentations: Fastify, pg, ioredis, cassandra-driver,
-  kafkajs.
+  kafkajs. Auto-instrumentation handles all I/O child spans for free.
 - `docker-compose.yml`: add Jaeger (OTLP receiver + UI on 16686).
-- Manual spans inside `RecordSwipeUseCase` and `GetFeedUseCase` for business
-  operations.
+- `infrastructure/observability/requestContext.ts` — extend with
+  `enrichRequest(attrs)` helper that calls `setAttributes` on the root span
+  pinned to OTel context (`MAIN_SPAN_CONTEXT_KEY` pattern). Mirrors the
+  existing `currentLogger()` indirection.
+- HTTP `onResponse` hook stamps domain attributes from the use-case result
+  (`swipe.decision`, `swipe.matched`, `feed.candidates_returned`, `user.id`,
+  etc.). Use cases stay pure — adapter does the enrichment.
+- HTTP `onResponse` hook also emits a **canonical log line**: one info-level
+  record per request with route, status, duration, userId, db ms, error
+  class. Same fields as the root span attributes. Brandur-style fallback
+  visibility when Jaeger is down.
 - Pino mixin: stamp `traceId` / `spanId` from `trace.getActiveSpan()` into
   every log line → log↔trace correlation.
-- Stretch: trace-context column on `matches` row so the Debezium → Kafka
-  hop joins the same trace (full payoff comes in 14c).
+- Trace-context column on `matches` row (**required, not stretch**) so the
+  Debezium → Kafka hop joins the same trace. Without it the async unit of
+  work is severed from its trace — breaks the single-source-of-truth
+  invariant the wide-events model depends on.
+
+Span naming follows OTel `{verb} {object}` low-cardinality rule: `record
+swipe`, never `record_swipe_<userId>`. IDs go in attributes only.
 
 ## 14.5d — Prometheus + Grafana
 
