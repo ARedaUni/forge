@@ -13,6 +13,7 @@ import { bootstrapSchema as bootstrapCassandra } from './infrastructure/cassandr
 import { createCassandraClient } from './infrastructure/cassandra/client'
 import { registerMatchesConnector } from './infrastructure/debezium/registerConnector'
 import { createKafka } from './infrastructure/kafka/client'
+import { createMetrics } from './infrastructure/observability/metrics'
 import { bootstrapPostgres } from './infrastructure/postgres/bootstrap'
 import { createPostgresPool } from './infrastructure/postgres/client'
 import { createRedisClient } from './infrastructure/redis/client'
@@ -47,8 +48,15 @@ async function main(): Promise<void> {
   })
   const swipeMatch = new CassandraLwtSwipeMatchAdapter(cassandra)
 
+  const metrics = createMetrics()
+
   const getFeed = new GetFeedUseCase(feedPort, feedExclusion)
-  const recordSwipe = new RecordSwipeUseCase(swipeMatch, feedExclusion, matchPort)
+  const recordSwipe = new RecordSwipeUseCase(
+    swipeMatch,
+    feedExclusion,
+    matchPort,
+    metrics,
+  )
   const listMatches = new ListMatchesUseCase(matchPort)
   const authPort = new JwtAuthAdapter({
     secret: process.env['JWT_SECRET'] ?? 'change-me-in-production',
@@ -78,17 +86,23 @@ async function main(): Promise<void> {
     {
       name: 'postgres',
       critical: true,
-      check: async () => { await pool.query('SELECT 1') },
+      check: async () => {
+        await pool.query('SELECT 1')
+      },
     },
     {
       name: 'redis',
       critical: true,
-      check: async () => { await redis.ping() },
+      check: async () => {
+        await redis.ping()
+      },
     },
     {
       name: 'cassandra',
       critical: true,
-      check: async () => { await cassandra.execute('SELECT now() FROM system.local') },
+      check: async () => {
+        await cassandra.execute('SELECT now() FROM system.local')
+      },
     },
   ]
 
@@ -100,6 +114,7 @@ async function main(): Promise<void> {
     authPort,
     logger,
     healthChecks,
+    metrics,
   })
 
   const port = Number(process.env['PORT'] ?? 3000)
@@ -113,11 +128,14 @@ async function main(): Promise<void> {
     await pool.end()
     process.exit(0)
   }
-  process.on('SIGINT', shutdown)
-  process.on('SIGTERM', shutdown)
+  const onSignal = (): void => {
+    void shutdown()
+  }
+  process.on('SIGINT', onSignal)
+  process.on('SIGTERM', onSignal)
 }
 
-main().catch((err) => {
+main().catch((err: unknown) => {
   console.error(err)
   process.exit(1)
 })

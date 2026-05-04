@@ -7,10 +7,14 @@ import type { MatchEntry } from '../../../core/match/port'
 import { UserIdSchema, type UserId } from '../../../core/shared/types'
 import type { SwipeResult } from '../../../core/swipe-match/port'
 import { JwtAuthAdapter } from '../../outbound/auth/jwt'
+import { InMemoryFeedExclusionAdapter } from '../../outbound/feed-exclusion/inMemory'
 import { InMemoryLoggerAdapter } from '../../outbound/logger/inMemory'
+import { InMemoryMatchAdapter } from '../../outbound/match/inMemory'
+import { InMemorySwipeMatchAdapter } from '../../outbound/swipe-match/inMemory'
 import type { GetFeedUseCase, GetFeedInput } from '../../../use-cases/getFeed'
 import type { ListMatchesUseCase } from '../../../use-cases/listMatches'
-import type { RecordSwipeUseCase } from '../../../use-cases/recordSwipe'
+import { RecordSwipeUseCase } from '../../../use-cases/recordSwipe'
+import { createMetrics } from '../../../infrastructure/observability/metrics'
 import { createServer, type HttpDeps } from './server'
 
 const userId = (): UserId => UserIdSchema.parse(randomUUID())
@@ -18,7 +22,7 @@ const userId = (): UserId => UserIdSchema.parse(randomUUID())
 const makeProfile = (id: UserId): UserProfile => ({
   id,
   age: 28,
-  gender: 'woman' as Gender,
+  gender: 'woman',
   interestedIn: ['man'] as [Gender],
   ageRange: { min: 25, max: 35 },
   location: { lat: 51.5074, lng: -0.1278 },
@@ -67,9 +71,27 @@ describe('HTTP server', () => {
       const app = createServer(
         makeDeps(userId(), {
           healthChecks: [
-            { name: 'postgres', critical: true, check: async () => { calls.push('postgres') } },
-            { name: 'cassandra', critical: true, check: async () => { calls.push('cassandra') } },
-            { name: 'redis', critical: true, check: async () => { calls.push('redis') } },
+            {
+              name: 'postgres',
+              critical: true,
+              check: async () => {
+                calls.push('postgres')
+              },
+            },
+            {
+              name: 'cassandra',
+              critical: true,
+              check: async () => {
+                calls.push('cassandra')
+              },
+            },
+            {
+              name: 'redis',
+              critical: true,
+              check: async () => {
+                calls.push('redis')
+              },
+            },
           ],
         }),
       )
@@ -95,7 +117,9 @@ describe('HTTP server', () => {
             {
               name: 'cassandra',
               critical: true,
-              check: async () => { throw new Error('node down') },
+              check: async () => {
+                throw new Error('node down')
+              },
             },
           ],
         }),
@@ -134,7 +158,9 @@ describe('HTTP server', () => {
       expect(res.statusCode).toBe(503)
       expect(elapsed).toBeLessThan(150)
       const body = res.json()
-      expect(body.checks.find((c: { name: string }) => c.name === 'cassandra')).toMatchObject({
+      expect(
+        body.checks.find((c: { name: string }) => c.name === 'cassandra'),
+      ).toMatchObject({
         ok: false,
         critical: true,
       })
@@ -148,7 +174,9 @@ describe('HTTP server', () => {
             {
               name: 'kafka',
               critical: false,
-              check: async () => { throw new Error('broker unreachable') },
+              check: async () => {
+                throw new Error('broker unreachable')
+              },
             },
           ],
         }),
@@ -173,11 +201,19 @@ describe('HTTP server', () => {
       const app = createServer(
         makeDeps(userId(), {
           userRepo: {
-            save: async () => { userRepoCalled = true },
-            load: async () => { userRepoCalled = true; return null },
+            save: async () => {
+              userRepoCalled = true
+            },
+            load: async () => {
+              userRepoCalled = true
+              return null
+            },
           },
           listMatches: {
-            execute: async () => { listMatchesCalled = true; return [] },
+            execute: async () => {
+              listMatchesCalled = true
+              return []
+            },
           } as unknown as ListMatchesUseCase,
         }),
       )
@@ -198,7 +234,9 @@ describe('HTTP server', () => {
       const app = createServer(
         makeDeps(id, {
           userRepo: {
-            save: async (p) => { upserted = p },
+            save: async (p) => {
+              upserted = p
+            },
             load: async () => null,
           },
         }),
@@ -317,7 +355,10 @@ describe('HTTP server', () => {
       const app = createServer(
         makeDeps(swiper, {
           recordSwipe: {
-            execute: async (s: { swiperId: UserId; targetId: UserId }): Promise<SwipeResult> => {
+            execute: async (s: {
+              swiperId: UserId
+              targetId: UserId
+            }): Promise<SwipeResult> => {
               captured = s
               return { kind: 'recorded' }
             },
@@ -477,6 +518,59 @@ describe('HTTP server', () => {
       const app = createServer(makeDeps(userId(), { authPort: realAuth }))
       const res = await app.inject({ method: 'GET', url: '/livez' })
       expect(res.statusCode).toBe(200)
+    })
+  })
+
+  describe('GET /metrics', () => {
+    it('exposes Prometheus-format metrics reflecting served requests, without auth', async () => {
+      const metrics = createMetrics()
+      const app = createServer(makeDeps(userId(), { metrics }))
+
+      // Drive a request through the HTTP boundary so there is something to observe.
+      const livez = await app.inject({ method: 'GET', url: '/livez' })
+      expect(livez.statusCode).toBe(200)
+
+      // Public — no Authorization header sent.
+      const res = await app.inject({ method: 'GET', url: '/metrics' })
+
+      expect(res.statusCode).toBe(200)
+      expect(res.headers['content-type']).toMatch(/text\/plain.*version=0\.0\.4/)
+      const body = res.body
+      expect(body).toMatch(
+        /http_requests_total\{[^}]*method="GET"[^}]*route="\/livez"[^}]*status="200"[^}]*\} 1\b/,
+      )
+      expect(body).toContain('http_request_duration_seconds_count')
+      expect(body).toMatch(
+        /http_request_duration_seconds_count\{[^}]*method="GET"[^}]*route="\/livez"[^}]*status="200"[^}]*\} 1\b/,
+      )
+    })
+
+    it('records swipe outcomes from RecordSwipeUseCase', async () => {
+      const swiper = userId()
+      const target = userId()
+      const metrics = createMetrics()
+      const recordSwipe = new RecordSwipeUseCase(
+        new InMemorySwipeMatchAdapter(),
+        new InMemoryFeedExclusionAdapter(),
+        new InMemoryMatchAdapter(),
+        metrics,
+      )
+      const app = createServer(makeDeps(swiper, { metrics, recordSwipe }))
+
+      const post = await app.inject({
+        method: 'POST',
+        url: '/swipes',
+        headers: noopHeaders,
+        payload: { targetId: target, decision: 'yes' },
+      })
+      expect(post.statusCode).toBe(200)
+      expect(post.json()).toEqual({ kind: 'recorded' })
+
+      const res = await app.inject({ method: 'GET', url: '/metrics' })
+      expect(res.statusCode).toBe(200)
+      expect(res.body).toMatch(
+        /swipe_outcomes_total\{[^}]*decision="yes"[^}]*result="recorded"[^}]*\} 1\b/,
+      )
     })
   })
 

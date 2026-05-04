@@ -1,9 +1,17 @@
 import { randomUUID } from 'node:crypto'
-import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify'
+import Fastify, {
+  type FastifyInstance,
+  type FastifyReply,
+  type FastifyRequest,
+} from 'fastify'
 import { z } from 'zod'
 import { AuthError, type AuthPort } from '../../../core/auth/port'
 import type { HealthCheck } from '../../../core/observability/healthCheck'
 import type { Logger } from '../../../core/observability/logger'
+import {
+  createMetrics,
+  type Metrics,
+} from '../../../infrastructure/observability/metrics'
 import { enterLoggerContext } from '../../../infrastructure/observability/requestContext'
 import { UserIdSchema, type UserId } from '../../../core/shared/types'
 import { SwipeDecisionSchema } from '../../../core/swipe-match/types'
@@ -17,6 +25,7 @@ declare module 'fastify' {
   interface FastifyRequest {
     principal?: { userId: UserId }
     logger?: Logger
+    metricsStartNs?: bigint
   }
 }
 
@@ -49,14 +58,12 @@ export type HttpDeps = {
   logger: Logger
   healthChecks?: HealthCheck[]
   healthCheckTimeoutMs?: number
+  metrics?: Metrics
 }
 
 const DEFAULT_HEALTH_CHECK_TIMEOUT_MS = 500
 
-async function withTimeout(
-  promise: Promise<void>,
-  timeoutMs: number,
-): Promise<void> {
+async function withTimeout(promise: Promise<void>, timeoutMs: number): Promise<void> {
   let timer: NodeJS.Timeout | undefined
   const timeout = new Promise<void>((_, reject) => {
     timer = setTimeout(() => reject(new Error('timeout')), timeoutMs)
@@ -68,7 +75,7 @@ async function withTimeout(
   }
 }
 
-const PUBLIC_ROUTES = new Set(['/livez', '/readyz', '/auth/token'])
+const PUBLIC_ROUTES = new Set(['/livez', '/readyz', '/metrics', '/auth/token'])
 
 async function authMiddleware(
   authPort: AuthPort,
@@ -103,13 +110,28 @@ function requirePrincipal(req: FastifyRequest): { userId: UserId } {
 
 export function createServer(deps: HttpDeps): FastifyInstance {
   const app = Fastify({ logger: false })
+  const metrics = deps.metrics ?? createMetrics()
 
   app.addHook('onRequest', async (req) => {
     const reqId = randomUUID()
     const child = deps.logger.child({ reqId, method: req.method, url: req.url })
     req.logger = child
     enterLoggerContext(child)
+    req.metricsStartNs = process.hrtime.bigint()
     child.info('request received')
+  })
+
+  app.addHook('onResponse', async (req, reply) => {
+    if (req.metricsStartNs === undefined) return
+    const route = req.routeOptions.url
+    if (!route) return
+    const durationSec = Number(process.hrtime.bigint() - req.metricsStartNs) / 1e9
+    metrics.recordHttpRequest({
+      method: req.method,
+      route,
+      status: reply.statusCode,
+      durationSec,
+    })
   })
 
   app.addHook('onRequest', async (req, reply) => {
@@ -128,6 +150,11 @@ export function createServer(deps: HttpDeps): FastifyInstance {
   })
 
   app.get('/livez', async () => ({ status: 'ok' }))
+
+  app.get('/metrics', async (_req, reply) => {
+    const body = await metrics.registry.metrics()
+    return reply.type(metrics.registry.contentType).send(body)
+  })
 
   app.get('/readyz', async (_req, reply) => {
     const checks = deps.healthChecks ?? []

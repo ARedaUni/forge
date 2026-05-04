@@ -4,6 +4,7 @@ import { InMemoryMatchAdapter } from '../adapters/outbound/match/inMemory'
 import { InMemorySwipeMatchAdapter } from '../adapters/outbound/swipe-match/inMemory'
 import { UserIdSchema, type UserId } from '../core/shared/types'
 import type { Swipe } from '../core/swipe-match/types'
+import { createMetrics } from '../infrastructure/observability/metrics'
 import { RecordSwipeUseCase } from './recordSwipe'
 
 const SWIPER = UserIdSchema.parse('00000000-0000-4000-8000-00000000000a')
@@ -29,7 +30,12 @@ const makeHarness = (): Harness => {
   const swipeMatch = new InMemorySwipeMatchAdapter()
   const feedExclusion = new InMemoryFeedExclusionAdapter()
   const matchPort = new InMemoryMatchAdapter()
-  const useCase = new RecordSwipeUseCase(swipeMatch, feedExclusion, matchPort)
+  const useCase = new RecordSwipeUseCase(
+    swipeMatch,
+    feedExclusion,
+    matchPort,
+    createMetrics(),
+  )
   return { useCase, swipeMatch, feedExclusion, matchPort }
 }
 
