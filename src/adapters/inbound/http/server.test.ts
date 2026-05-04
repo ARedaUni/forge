@@ -33,8 +33,8 @@ const realAuth = new JwtAuthAdapter({ secret: 'test-secret' })
 
 function noopAuthFor(id: UserId): AuthPort {
   return {
-    issueToken: async () => 'noop-token',
-    verifyToken: async () => id,
+    issueCredential: async () => 'noop-token',
+    verifyCredential: async () => id,
   }
 }
 const noopHeaders = { authorization: 'Bearer noop-token' }
@@ -51,8 +51,8 @@ function makeDeps(principalId: UserId, overrides: Partial<HttpDeps> = {}): HttpD
       execute: async (): Promise<MatchEntry[]> => [],
     } as unknown as ListMatchesUseCase,
     userRepo: {
-      upsert: async () => undefined,
-      findById: async (id) => makeProfile(id),
+      save: async () => undefined,
+      load: async (id) => makeProfile(id),
     },
     authPort: noopAuthFor(principalId),
     logger: new InMemoryLoggerAdapter(),
@@ -173,8 +173,8 @@ describe('HTTP server', () => {
       const app = createServer(
         makeDeps(userId(), {
           userRepo: {
-            upsert: async () => { userRepoCalled = true },
-            findById: async () => { userRepoCalled = true; return null },
+            save: async () => { userRepoCalled = true },
+            load: async () => { userRepoCalled = true; return null },
           },
           listMatches: {
             execute: async () => { listMatchesCalled = true; return [] },
@@ -198,8 +198,8 @@ describe('HTTP server', () => {
       const app = createServer(
         makeDeps(id, {
           userRepo: {
-            upsert: async (p) => { upserted = p },
-            findById: async () => null,
+            save: async (p) => { upserted = p },
+            load: async () => null,
           },
         }),
       )
@@ -281,8 +281,8 @@ describe('HTTP server', () => {
       const app = createServer(
         makeDeps(userId(), {
           userRepo: {
-            upsert: async () => undefined,
-            findById: async () => null,
+            save: async () => undefined,
+            load: async () => null,
           },
         }),
       )
@@ -451,7 +451,7 @@ describe('HTTP server', () => {
 
     it('allows a request with a valid token through and binds the principal', async () => {
       const id = userId()
-      const token = await realAuth.issueToken(id)
+      const token = await realAuth.issueCredential(id)
       let listedFor: UserId | undefined
       const app = createServer(
         makeDeps(userId(), {

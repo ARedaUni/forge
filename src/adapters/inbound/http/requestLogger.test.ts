@@ -24,8 +24,8 @@ const profileFor = (id: UserId): UserProfile => ({
 })
 
 const noopAuthFor = (id: UserId): AuthPort => ({
-  issueToken: async () => 'noop-token',
-  verifyToken: async () => id,
+  issueCredential: async () => 'noop-token',
+  verifyCredential: async () => id,
 })
 
 function makeDeps(principal: UserId, logger: InMemoryLoggerAdapter, overrides: Partial<HttpDeps> = {}): HttpDeps {
@@ -38,8 +38,8 @@ function makeDeps(principal: UserId, logger: InMemoryLoggerAdapter, overrides: P
       execute: async (): Promise<MatchEntry[]> => [],
     } as unknown as ListMatchesUseCase,
     userRepo: {
-      upsert: async () => undefined,
-      findById: async (id) => profileFor(id),
+      save: async () => undefined,
+      load: async (id) => profileFor(id),
     },
     authPort: noopAuthFor(principal),
     logger,

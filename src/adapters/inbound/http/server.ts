@@ -82,9 +82,9 @@ async function authMiddleware(
     return reply.code(401).send({ error: 'unauthorized' })
   }
 
-  const token = header.slice(7)
+  const credential = header.slice(7)
   try {
-    const userId = await authPort.verifyToken(token)
+    const userId = await authPort.verifyCredential(credential)
     req.principal = { userId }
   } catch (err) {
     if (err instanceof AuthError) {
@@ -150,7 +150,7 @@ export function createServer(deps: HttpDeps): FastifyInstance {
 
   app.post('/auth/token', async (req) => {
     const { userId } = IssueTokenRequestSchema.parse(req.body)
-    const token = await deps.authPort.issueToken(userId)
+    const token = await deps.authPort.issueCredential(userId)
     return { token }
   })
 
@@ -160,14 +160,14 @@ export function createServer(deps: HttpDeps): FastifyInstance {
     if (profile.id !== userId) {
       return reply.code(403).send({ error: 'forbidden' })
     }
-    await deps.userRepo.upsert(profile)
+    await deps.userRepo.save(profile)
     return reply.code(201).send({ id: profile.id })
   })
 
   app.post('/feed', async (req, reply) => {
     const { userId } = requirePrincipal(req)
     const input = FeedRequestSchema.parse(req.body)
-    const viewer = await deps.userRepo.findById(userId)
+    const viewer = await deps.userRepo.load(userId)
     if (!viewer) {
       return reply.code(404).send({ error: 'profile_not_found' })
     }

@@ -8,6 +8,6 @@ export class AuthError extends Error {
 }
 
 export interface AuthPort {
-  issueToken(userId: UserId): Promise<string>
-  verifyToken(token: string): Promise<UserId>
+  issueCredential(userId: UserId): Promise<string>
+  verifyCredential(credential: string): Promise<UserId>
 }

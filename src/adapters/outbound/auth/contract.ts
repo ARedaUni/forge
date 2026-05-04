@@ -12,31 +12,31 @@ export type AuthContractSetup = {
 
 export function runAuthContract(cfg: AuthContractSetup): void {
   describe(`AuthPort contract — ${cfg.name}`, () => {
-    it('issueToken returns a non-empty string', async () => {
+    it('issueCredential returns a non-empty string', async () => {
       const adapter = cfg.setup()
-      const token = await adapter.issueToken(userId())
-      expect(typeof token).toBe('string')
-      expect(token.length).toBeGreaterThan(0)
+      const credential = await adapter.issueCredential(userId())
+      expect(typeof credential).toBe('string')
+      expect(credential.length).toBeGreaterThan(0)
     })
 
-    it('verifyToken round-trips the userId', async () => {
+    it('verifyCredential round-trips the userId', async () => {
       const adapter = cfg.setup()
       const id = userId()
-      const token = await adapter.issueToken(id)
-      const recovered = await adapter.verifyToken(token)
+      const credential = await adapter.issueCredential(id)
+      const recovered = await adapter.verifyCredential(credential)
       expect(recovered).toBe(id)
     })
 
-    it('verifyToken throws AuthError for a tampered token', async () => {
+    it('verifyCredential throws AuthError for a tampered credential', async () => {
       const adapter = cfg.setup()
-      await expect(adapter.verifyToken('not.a.valid.token')).rejects.toThrow(AuthError)
+      await expect(adapter.verifyCredential('not.a.valid.credential')).rejects.toThrow(AuthError)
     })
 
-    it('verifyToken throws AuthError for a token signed with a different secret', async () => {
+    it('verifyCredential throws AuthError for a credential signed with a different secret', async () => {
       const adapter = cfg.setup()
       const other = cfg.setup()
-      const token = await adapter.issueToken(userId())
-      await expect(other.verifyToken(token)).rejects.toThrow(AuthError)
+      const credential = await adapter.issueCredential(userId())
+      await expect(other.verifyCredential(credential)).rejects.toThrow(AuthError)
     })
   })
 }

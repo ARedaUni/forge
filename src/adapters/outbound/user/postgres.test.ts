@@ -33,15 +33,15 @@ afterAll(async () => {
 })
 
 describe('PostgresUserRepositoryAdapter', () => {
-  it('inserts a new profile without error', async () => {
-    await expect(adapter.upsert(makeProfile(userId()))).resolves.toBeUndefined()
+  it('saves a new profile without error', async () => {
+    await expect(adapter.save(makeProfile(userId()))).resolves.toBeUndefined()
   })
 
-  it('upserts an existing profile (re-insert same id updates the row, no error)', async () => {
+  it('overwrites an existing profile when save is called twice for the same id', async () => {
     const id = userId()
-    await adapter.upsert(makeProfile(id))
+    await adapter.save(makeProfile(id))
     const updated = { ...makeProfile(id), age: 30 }
-    await expect(adapter.upsert(updated)).resolves.toBeUndefined()
+    await expect(adapter.save(updated)).resolves.toBeUndefined()
 
     const row = await pool.query<{ age: number }>(
       'SELECT age FROM users WHERE id = $1',
@@ -50,18 +50,18 @@ describe('PostgresUserRepositoryAdapter', () => {
     expect(row.rows[0]?.age).toBe(30)
   })
 
-  describe('findById', () => {
+  describe('load', () => {
     it('returns null when the user does not exist', async () => {
-      const found = await adapter.findById(userId())
+      const found = await adapter.load(userId())
       expect(found).toBeNull()
     })
 
     it('returns the profile when it exists, round-tripping every field', async () => {
       const id = userId()
       const profile = makeProfile(id)
-      await adapter.upsert(profile)
+      await adapter.save(profile)
 
-      const found = await adapter.findById(id)
+      const found = await adapter.load(id)
 
       expect(found).not.toBeNull()
       expect(found?.id).toBe(id)

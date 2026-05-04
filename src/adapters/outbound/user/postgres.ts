@@ -43,11 +43,11 @@ function rowToProfile(row: Row): UserProfile {
 export class PostgresUserRepositoryAdapter implements UserRepositoryPort {
   constructor(private readonly pool: pg.Pool) {}
 
-  async upsert(profile: UserProfile): Promise<void> {
+  async save(profile: UserProfile): Promise<void> {
     await insertProfile(this.pool, profile)
   }
 
-  async findById(id: UserId): Promise<UserProfile | null> {
+  async load(id: UserId): Promise<UserProfile | null> {
     const result = await this.pool.query<Row>(FIND_BY_ID_SQL, [id])
     const row = result.rows[0]
     if (!row) return null

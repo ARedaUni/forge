@@ -20,18 +20,18 @@ export class JwtAuthAdapter implements AuthPort {
     this.expiresIn = config.expiresIn ?? '7d'
   }
 
-  async issueToken(userId: UserId): Promise<string> {
+  async issueCredential(userId: UserId): Promise<string> {
     const options: SignOptions =
       this.expiresIn !== undefined ? { expiresIn: this.expiresIn } : {}
     return jwt.sign({ sub: userId }, this.secret, options)
   }
 
-  async verifyToken(token: string): Promise<UserId> {
+  async verifyCredential(credential: string): Promise<UserId> {
     try {
-      const payload = jwt.verify(token, this.secret) as JwtPayload
+      const payload = jwt.verify(credential, this.secret) as JwtPayload
       return UserIdSchema.parse(payload.sub)
     } catch {
-      throw new AuthError('invalid or expired token')
+      throw new AuthError('invalid or expired credential')
     }
   }
 }
