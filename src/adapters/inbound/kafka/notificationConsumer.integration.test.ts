@@ -85,6 +85,7 @@ describe('NotificationConsumer', () => {
       logger,
       groupId: `consumer-test-${randomUUID()}`,
       topic: TOPIC,
+      fromBeginning: true,
     })
     consumers.push(consumer)
 
@@ -114,6 +115,7 @@ describe('NotificationConsumer', () => {
       logger,
       groupId: `consumer-test-${randomUUID()}`,
       topic: TOPIC,
+      fromBeginning: true,
     })
     consumers.push(consumer)
 
@@ -143,6 +145,7 @@ describe('NotificationConsumer', () => {
       logger,
       groupId: `consumer-test-${randomUUID()}`,
       topic: TOPIC,
+      fromBeginning: true,
     })
     consumers.push(consumer)
 

@@ -9,6 +9,12 @@ export type NotificationConsumerOptions = {
   logger: Logger
   groupId: string
   topic: string
+  // Defaults to false (start at "latest"), which is correct for production:
+  // each new consumer group should pick up new traffic, not replay history.
+  // Set to true for tests against a fresh topic, where the alternative —
+  // KafkaJS's offset-reset-to-latest racing with the first produced message
+  // — silently drops messages.
+  fromBeginning?: boolean
 }
 
 // Inbound (driving) adapter — Kafka events drive the application via the
@@ -25,6 +31,7 @@ export class NotificationConsumer {
   private readonly logger: Logger
   private readonly groupId: string
   private readonly topic: string
+  private readonly fromBeginning: boolean
   private consumer: Consumer | undefined
 
   constructor(opts: NotificationConsumerOptions) {
@@ -33,12 +40,13 @@ export class NotificationConsumer {
     this.logger = opts.logger
     this.groupId = opts.groupId
     this.topic = opts.topic
+    this.fromBeginning = opts.fromBeginning ?? false
   }
 
   async start(): Promise<void> {
     const consumer = this.kafka.consumer({ groupId: this.groupId })
     await consumer.connect()
-    await consumer.subscribe({ topic: this.topic, fromBeginning: false })
+    await consumer.subscribe({ topic: this.topic, fromBeginning: this.fromBeginning })
 
     // `consumer.run()` is fire-and-forget — it returns once `eachMessage` is
     // registered, but the consumer may not yet have joined the group or been
