@@ -20,11 +20,19 @@ async function deleteConnector(): Promise<void> {
 }
 
 describe('registerMatchesConnector', () => {
+  // The Debezium connector uses publication.autocreate.mode=filtered, which
+  // builds the publication FROM the tables in table.include.list — so those
+  // tables must exist at registration time. Locally the docker volume keeps
+  // matches around between runs; on a fresh CI box it doesn't. Bootstrap
+  // here so the connector has something to filter on.
+  const pool = createPostgresPool()
   beforeAll(async () => {
+    await bootstrapPostgres(pool)
     await deleteConnector()
   })
   afterAll(async () => {
     await deleteConnector()
+    await pool.end()
   })
 
   it('PUTs the matches connector config and waits until it reports RUNNING', async () => {
