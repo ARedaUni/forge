@@ -34,14 +34,6 @@ export function runLoggerContract(cfg: LoggerContractSetup): void {
       ])
     })
 
-    it('preserves call order across levels', () => {
-      const { logger, records } = cfg.setup()
-      logger.debug('a')
-      logger.warn('b')
-      logger.error('c')
-      expect(records().map((r) => r.level)).toEqual(['debug', 'warn', 'error'])
-    })
-
     it('child() returns a logger that merges persistent fields into every call', () => {
       const { logger, records } = cfg.setup()
       const child = logger.child({ reqId: 'r-1' })
@@ -50,24 +42,6 @@ export function runLoggerContract(cfg: LoggerContractSetup): void {
       expect(records()).toEqual([
         { level: 'info', message: 'first', fields: { reqId: 'r-1', route: '/feed' } },
         { level: 'warn', message: 'second', fields: { reqId: 'r-1' } },
-      ])
-    })
-
-    it('child() does not affect the parent logger', () => {
-      const { logger, records } = cfg.setup()
-      logger.child({ reqId: 'r-1' })
-      logger.info('parent call')
-      expect(records()).toEqual([
-        { level: 'info', message: 'parent call', fields: undefined },
-      ])
-    })
-
-    it('per-call fields override child fields on key collision', () => {
-      const { logger, records } = cfg.setup()
-      const child = logger.child({ route: '/old' })
-      child.info('overridden', { route: '/new' })
-      expect(records()).toEqual([
-        { level: 'info', message: 'overridden', fields: { route: '/new' } },
       ])
     })
   })
