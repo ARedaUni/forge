@@ -1,5 +1,13 @@
+import { trace } from '@opentelemetry/api'
 import pino, { type Logger as PinoLogger, type LoggerOptions } from 'pino'
 import type { LogFields, Logger } from '../../../core/observability/logger'
+
+function traceContextMixin(): LogFields {
+  const span = trace.getActiveSpan()
+  if (!span) return {}
+  const ctx = span.spanContext()
+  return { traceId: ctx.traceId, spanId: ctx.spanId }
+}
 
 export class PinoLoggerAdapter implements Logger {
   private readonly p: PinoLogger
@@ -11,7 +19,11 @@ export class PinoLoggerAdapter implements Logger {
     ) {
       this.p = arg as PinoLogger
     } else {
-      this.p = pino(arg as LoggerOptions)
+      const opts = arg as LoggerOptions
+      this.p = pino({
+        ...opts,
+        mixin: opts.mixin ?? traceContextMixin,
+      })
     }
   }
 

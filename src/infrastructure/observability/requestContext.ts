@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { trace } from '@opentelemetry/api'
 import type { Logger } from '../../core/observability/logger'
 
 export type RequestAttrs = Record<string, unknown>
@@ -30,8 +31,18 @@ export function currentLogger(): Logger {
 
 export function enrichRequest(attrs: RequestAttrs): void {
   const store = als.getStore()
-  if (!store) return
-  Object.assign(store.attrs, attrs)
+  if (store) Object.assign(store.attrs, attrs)
+  const span = trace.getActiveSpan()
+  if (!span) return
+  for (const [key, value] of Object.entries(attrs)) {
+    if (
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean'
+    ) {
+      span.setAttribute(key, value)
+    }
+  }
 }
 
 export function currentRequestAttrs(): RequestAttrs {

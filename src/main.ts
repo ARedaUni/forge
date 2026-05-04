@@ -1,3 +1,5 @@
+import { shutdownOtel } from './infrastructure/observability/otel'
+
 import { createServer } from './adapters/inbound/http/server'
 import { NotificationConsumer } from './adapters/inbound/kafka/notificationConsumer'
 import { JwtAuthAdapter } from './adapters/outbound/auth/jwt'
@@ -126,6 +128,7 @@ async function main(): Promise<void> {
     await redis.quit()
     await cassandra.shutdown()
     await pool.end()
+    await shutdownOtel()
     process.exit(0)
   }
   const onSignal = (): void => {
