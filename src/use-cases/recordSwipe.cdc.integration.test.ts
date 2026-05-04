@@ -50,7 +50,30 @@ describe('RecordSwipeUseCase — events arrive on Kafka via Debezium CDC, not vi
 
     consumer = kafka.consumer({ groupId: `cdc-test-${randomUUID()}` })
     await consumer.connect()
-    await consumer.subscribe({ topic: 'notifications', fromBeginning: true })
+    // fromBeginning: false — only consume messages produced after the consumer
+    // joins. The topic accumulates messages across runs; replaying from offset
+    // 0 makes the test wait for the consumer to catch up past hundreds of
+    // unrelated messages, which exceeds the 15s deadline. Safe because we
+    // await GROUP_JOIN below before letting beforeAll resolve.
+    await consumer.subscribe({ topic: 'notifications', fromBeginning: false })
+
+    // consumer.run() returns once eachMessage is registered, but the consumer
+    // may not yet have joined the group / been assigned partitions
+    // (tulios/kafkajs#1629). Without this wait, a producer writing in that
+    // window lands at an offset the "latest" reset skips. GROUP_JOIN's
+    // payload includes the assignment, so this single signal covers both.
+    const groupJoined = new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(
+        () => reject(new Error('cdc-test consumer GROUP_JOIN timed out')),
+        30_000,
+      )
+      const remove = consumer.on(consumer.events.GROUP_JOIN, () => {
+        clearTimeout(timeout)
+        remove()
+        resolve()
+      })
+    })
+
     await consumer.run({
       eachMessage: async ({ message }) => {
         if (!message.value) return
@@ -60,6 +83,8 @@ describe('RecordSwipeUseCase — events arrive on Kafka via Debezium CDC, not vi
         if (parsed.success) buffer.push(parsed.data)
       },
     })
+
+    await groupJoined
   }, 60_000)
 
   beforeEach(async () => {
@@ -121,17 +146,23 @@ describe('RecordSwipeUseCase — events arrive on Kafka via Debezium CDC, not vi
     const ours = buffer.filter(isOurPair)
     expect(ours).toHaveLength(2)
     const bySide = new Map(ours.map((e) => [e.userId, e]))
+    // The use case runs without an active OTel span here, so the producer
+    // adapter writes traceContext=null on the row and Debezium replicates it
+    // verbatim. (Wired-end-to-end trace propagation is exercised in
+    // registerConnector.integration.test.ts and the consumer's own tests.)
     expect(bySide.get(swiper)).toEqual({
       type: 'match',
       userId: swiper,
       otherUserId: target,
       matchedAt: at,
+      traceContext: null,
     })
     expect(bySide.get(target)).toEqual({
       type: 'match',
       userId: target,
       otherUserId: swiper,
       matchedAt: at,
+      traceContext: null,
     })
   }, 30_000)
 })
