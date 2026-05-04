@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto'
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { AuthError, type AuthPort } from '../../../domain/auth/port'
-import type { MatchPort } from '../../../domain/match/port'
 import type { HealthCheck } from '../../../domain/observability/healthCheck'
 import type { Logger } from '../../../domain/observability/logger'
 import { enterLoggerContext } from '../../../infrastructure/observability/requestContext'
@@ -11,6 +10,7 @@ import { SwipeDecisionSchema } from '../../../domain/swipe-match/types'
 import type { UserRepositoryPort } from '../../../domain/user/port'
 import { LocationSchema, UserProfileSchema } from '../../../domain/user/types'
 import type { GetFeedUseCase } from '../../../use-cases/getFeed'
+import type { ListMatchesUseCase } from '../../../use-cases/listMatches'
 import type { RecordSwipeUseCase } from '../../../use-cases/recordSwipe'
 
 declare module 'fastify' {
@@ -43,8 +43,8 @@ const IssueTokenRequestSchema = z.object({
 export type HttpDeps = {
   getFeed: GetFeedUseCase
   recordSwipe: RecordSwipeUseCase
+  listMatches: ListMatchesUseCase
   userRepo: UserRepositoryPort
-  matchPort: MatchPort
   authPort: AuthPort
   logger: Logger
   healthChecks?: HealthCheck[]
@@ -193,7 +193,7 @@ export function createServer(deps: HttpDeps): FastifyInstance {
     const options: { limit?: number; before?: Date } = {}
     if (limit !== undefined) options.limit = limit
     if (before !== undefined) options.before = before
-    const matches = await deps.matchPort.listForUser(userId, options)
+    const matches = await deps.listMatches.execute(userId, options)
     return { matches }
   })
 

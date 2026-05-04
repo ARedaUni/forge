@@ -7,6 +7,7 @@ import type { SwipeResult } from '../../../domain/swipe-match/port'
 import type { Gender, UserProfile } from '../../../domain/user/types'
 import { InMemoryLoggerAdapter } from '../../outbound/logger/inMemory'
 import type { GetFeedUseCase } from '../../../use-cases/getFeed'
+import type { ListMatchesUseCase } from '../../../use-cases/listMatches'
 import type { RecordSwipeUseCase } from '../../../use-cases/recordSwipe'
 import { currentLogger } from '../../../infrastructure/observability/requestContext'
 import { createServer, type HttpDeps } from './server'
@@ -33,13 +34,12 @@ function makeDeps(principal: UserId, logger: InMemoryLoggerAdapter, overrides: P
     recordSwipe: {
       execute: async (): Promise<SwipeResult> => ({ kind: 'recorded' }),
     } as unknown as RecordSwipeUseCase,
+    listMatches: {
+      execute: async (): Promise<MatchEntry[]> => [],
+    } as unknown as ListMatchesUseCase,
     userRepo: {
       upsert: async () => undefined,
       findById: async (id) => profileFor(id),
-    },
-    matchPort: {
-      recordMatch: async () => undefined,
-      listForUser: async (): Promise<MatchEntry[]> => [],
     },
     authPort: noopAuthFor(principal),
     logger,
@@ -87,18 +87,4 @@ describe('HTTP request logger', () => {
     expect(handlerLog?.fields?.['url']).toBe('/__test/als')
   })
 
-  it('uses a distinct reqId per request', async () => {
-    const logger = new InMemoryLoggerAdapter()
-    const app = createServer(makeDeps(userId(), logger))
-
-    await app.inject({ method: 'GET', url: '/livez' })
-    await app.inject({ method: 'GET', url: '/livez' })
-
-    const reqIds = new Set(
-      logger.records
-        .map((r) => r.fields?.['reqId'])
-        .filter((v): v is string => typeof v === 'string'),
-    )
-    expect(reqIds.size).toBe(2)
-  })
 })

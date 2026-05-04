@@ -9,6 +9,7 @@ import type { SwipeResult } from '../../../domain/swipe-match/port'
 import { JwtAuthAdapter } from '../../outbound/auth/jwt'
 import { InMemoryLoggerAdapter } from '../../outbound/logger/inMemory'
 import type { GetFeedUseCase, GetFeedInput } from '../../../use-cases/getFeed'
+import type { ListMatchesUseCase } from '../../../use-cases/listMatches'
 import type { RecordSwipeUseCase } from '../../../use-cases/recordSwipe'
 import { createServer, type HttpDeps } from './server'
 
@@ -46,13 +47,12 @@ function makeDeps(principalId: UserId, overrides: Partial<HttpDeps> = {}): HttpD
     recordSwipe: {
       execute: async (): Promise<SwipeResult> => ({ kind: 'recorded' }),
     } as unknown as RecordSwipeUseCase,
+    listMatches: {
+      execute: async (): Promise<MatchEntry[]> => [],
+    } as unknown as ListMatchesUseCase,
     userRepo: {
       upsert: async () => undefined,
       findById: async (id) => makeProfile(id),
-    },
-    matchPort: {
-      recordMatch: async () => undefined,
-      listForUser: async (): Promise<MatchEntry[]> => [],
     },
     authPort: noopAuthFor(principalId),
     logger: new InMemoryLoggerAdapter(),
@@ -169,17 +169,16 @@ describe('HTTP server', () => {
   describe('GET /livez', () => {
     it('returns 200 with status ok and performs no dependency calls', async () => {
       let userRepoCalled = false
-      let matchPortCalled = false
+      let listMatchesCalled = false
       const app = createServer(
         makeDeps(userId(), {
           userRepo: {
             upsert: async () => { userRepoCalled = true },
             findById: async () => { userRepoCalled = true; return null },
           },
-          matchPort: {
-            recordMatch: async () => { matchPortCalled = true },
-            listForUser: async () => { matchPortCalled = true; return [] },
-          },
+          listMatches: {
+            execute: async () => { listMatchesCalled = true; return [] },
+          } as unknown as ListMatchesUseCase,
         }),
       )
 
@@ -188,7 +187,7 @@ describe('HTTP server', () => {
       expect(res.statusCode).toBe(200)
       expect(res.json()).toEqual({ status: 'ok' })
       expect(userRepoCalled).toBe(false)
-      expect(matchPortCalled).toBe(false)
+      expect(listMatchesCalled).toBe(false)
     })
   })
 
@@ -386,13 +385,12 @@ describe('HTTP server', () => {
       let listedFor: UserId | undefined
       const app = createServer(
         makeDeps(viewerId, {
-          matchPort: {
-            recordMatch: async () => undefined,
-            listForUser: async (id) => {
+          listMatches: {
+            execute: async (id: UserId) => {
               listedFor = id
               return [{ otherUserId: otherId, matchedAt }]
             },
-          },
+          } as unknown as ListMatchesUseCase,
         }),
       )
 
@@ -458,13 +456,12 @@ describe('HTTP server', () => {
       const app = createServer(
         makeDeps(userId(), {
           authPort: realAuth,
-          matchPort: {
-            recordMatch: async () => undefined,
-            listForUser: async (uid) => {
+          listMatches: {
+            execute: async (uid: UserId) => {
               listedFor = uid
               return []
             },
-          },
+          } as unknown as ListMatchesUseCase,
         }),
       )
       const res = await app.inject({

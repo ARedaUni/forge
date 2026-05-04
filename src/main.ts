@@ -18,6 +18,7 @@ import { createPostgresPool } from './infrastructure/postgres/client'
 import { createRedisClient } from './infrastructure/redis/client'
 import { DeliverMatchNotificationUseCase } from './use-cases/deliverMatchNotification'
 import { GetFeedUseCase } from './use-cases/getFeed'
+import { ListMatchesUseCase } from './use-cases/listMatches'
 import { RecordSwipeUseCase } from './use-cases/recordSwipe'
 
 async function main(): Promise<void> {
@@ -48,6 +49,7 @@ async function main(): Promise<void> {
 
   const getFeed = new GetFeedUseCase(feedPort, feedExclusion)
   const recordSwipe = new RecordSwipeUseCase(swipeMatch, feedExclusion, matchPort)
+  const listMatches = new ListMatchesUseCase(matchPort)
   const authPort = new JwtAuthAdapter({
     secret: process.env['JWT_SECRET'] ?? 'change-me-in-production',
   })
@@ -93,8 +95,8 @@ async function main(): Promise<void> {
   const server = createServer({
     getFeed,
     recordSwipe,
+    listMatches,
     userRepo,
-    matchPort,
     authPort,
     logger,
     healthChecks,
