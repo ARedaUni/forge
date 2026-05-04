@@ -63,6 +63,13 @@ jobs:
       # Build the release artifact exactly once. Even though no CD stage
       # consumes it yet, building it here proves the Dockerfile works on
       # every commit — Farley's "build once" rule.
+      #
+      # buildx with the docker-container driver is required for the
+      # `type=gha` cache backend. The default docker driver doesn't support
+      # cache export.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build container image
         uses: docker/build-push-action@v6
         with:
