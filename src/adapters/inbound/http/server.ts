@@ -12,7 +12,11 @@ import {
   createMetrics,
   type Metrics,
 } from '../../../infrastructure/observability/metrics'
-import { enterLoggerContext } from '../../../infrastructure/observability/requestContext'
+import {
+  currentRequestAttrs,
+  enrichRequest,
+  enterLoggerContext,
+} from '../../../infrastructure/observability/requestContext'
 import { UserIdSchema, type UserId } from '../../../core/shared/types'
 import { SwipeDecisionSchema } from '../../../core/swipe-match/types'
 import type { UserRepositoryPort } from '../../../core/user/port'
@@ -132,6 +136,13 @@ export function createServer(deps: HttpDeps): FastifyInstance {
       status: reply.statusCode,
       durationSec,
     })
+    ;(req.logger ?? deps.logger).info('request completed', {
+      method: req.method,
+      route,
+      status: reply.statusCode,
+      durationMs: durationSec * 1000,
+      ...currentRequestAttrs(),
+    })
   })
 
   app.addHook('onRequest', async (req, reply) => {
@@ -140,11 +151,18 @@ export function createServer(deps: HttpDeps): FastifyInstance {
 
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof z.ZodError) {
+      enrichRequest({ 'error.class': 'ZodError' })
       return reply.code(400).send({ error: 'invalid_input', issues: err.issues })
     }
     if (err instanceof AuthError) {
+      enrichRequest({ 'error.class': 'AuthError' })
       return reply.code(401).send({ error: 'unauthorized' })
     }
+    const error = err as Error
+    enrichRequest({
+      'error.class': error.constructor.name,
+      'error.message': error.message,
+    })
     ;(req.logger ?? deps.logger).error('unhandled error', { err: String(err) })
     return reply.code(500).send({ error: 'internal_error' })
   })
@@ -172,19 +190,27 @@ export function createServer(deps: HttpDeps): FastifyInstance {
     const criticalDown = results.some((r) => !r.ok && r.critical)
     const status = criticalDown ? 'down' : 'ok'
     const code = criticalDown ? 503 : 200
+    enrichRequest({
+      'readyz.critical_down': criticalDown,
+      'readyz.checks_total': results.length,
+      'readyz.checks_failing': results.filter((r) => !r.ok).length,
+    })
     return reply.code(code).send({ status, checks: results })
   })
 
   app.post('/auth/token', async (req) => {
     const { userId } = IssueTokenRequestSchema.parse(req.body)
     const token = await deps.authPort.issueCredential(userId)
+    enrichRequest({ 'user.id': userId })
     return { token }
   })
 
   app.post('/profiles', async (req, reply) => {
     const { userId } = requirePrincipal(req)
     const profile = UserProfileSchema.parse(req.body)
+    enrichRequest({ 'user.id': userId })
     if (profile.id !== userId) {
+      enrichRequest({ 'profile.forbidden': true })
       return reply.code(403).send({ error: 'forbidden' })
     }
     await deps.userRepo.save(profile)
@@ -194,11 +220,18 @@ export function createServer(deps: HttpDeps): FastifyInstance {
   app.post('/feed', async (req, reply) => {
     const { userId } = requirePrincipal(req)
     const input = FeedRequestSchema.parse(req.body)
+    enrichRequest({
+      'user.id': userId,
+      'feed.radius_km': input.radiusKm,
+      'feed.limit': input.limit,
+    })
     const viewer = await deps.userRepo.load(userId)
     if (!viewer) {
+      enrichRequest({ 'feed.profile_not_found': true })
       return reply.code(404).send({ error: 'profile_not_found' })
     }
     const candidates = await deps.getFeed.execute({ ...input, viewer })
+    enrichRequest({ 'feed.candidates_returned': candidates.length })
     return { candidates }
   })
 
@@ -211,6 +244,11 @@ export function createServer(deps: HttpDeps): FastifyInstance {
       decision,
       createdAt: new Date(),
     })
+    enrichRequest({
+      'user.id': userId,
+      'swipe.decision': decision,
+      'swipe.matched': result.kind === 'matched',
+    })
     return result
   })
 
@@ -221,6 +259,10 @@ export function createServer(deps: HttpDeps): FastifyInstance {
     if (limit !== undefined) options.limit = limit
     if (before !== undefined) options.before = before
     const matches = await deps.listMatches.execute(userId, options)
+    enrichRequest({
+      'user.id': userId,
+      'matches.returned': matches.length,
+    })
     return { matches }
   })
 

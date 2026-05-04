@@ -67,6 +67,54 @@ describe('HTTP request logger', () => {
     expect(first.fields?.['url']).toBe('/livez')
   })
 
+  it('emits a canonical log line on response with method, route, status, durationMs, and reqId', async () => {
+    const logger = new InMemoryLoggerAdapter()
+    const app = createServer(makeDeps(userId(), logger))
+
+    const res = await app.inject({ method: 'GET', url: '/livez' })
+
+    expect(res.statusCode).toBe(200)
+    const canonical = logger.records.find((r) => r.message === 'request completed')
+    expect(canonical).toBeDefined()
+    expect(canonical?.fields?.['method']).toBe('GET')
+    expect(canonical?.fields?.['route']).toBe('/livez')
+    expect(canonical?.fields?.['status']).toBe(200)
+    expect(typeof canonical?.fields?.['reqId']).toBe('string')
+    const durationMs = canonical?.fields?.['durationMs']
+    expect(typeof durationMs).toBe('number')
+    expect(durationMs as number).toBeGreaterThanOrEqual(0)
+  })
+
+  it('stamps domain attrs from the swipe use-case result onto the canonical log line', async () => {
+    const logger = new InMemoryLoggerAdapter()
+    const principal = userId()
+    const target = userId()
+    const matchedSwipe: SwipeResult = {
+      kind: 'matched',
+      match: { userAId: principal, userBId: target, matchedAt: new Date() },
+    }
+    const app = createServer(
+      makeDeps(principal, logger, {
+        recordSwipe: {
+          execute: async () => matchedSwipe,
+        } as unknown as RecordSwipeUseCase,
+      }),
+    )
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/swipes',
+      headers: { authorization: 'Bearer noop-token' },
+      payload: { targetId: target, decision: 'yes' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const canonical = logger.records.find((r) => r.message === 'request completed')
+    expect(canonical?.fields?.['route']).toBe('/swipes')
+    expect(canonical?.fields?.['swipe.decision']).toBe('yes')
+    expect(canonical?.fields?.['swipe.matched']).toBe(true)
+  })
+
   it('exposes the request logger via currentLogger() inside an awaited handler', async () => {
     const logger = new InMemoryLoggerAdapter()
     const app = createServer(makeDeps(userId(), logger))
