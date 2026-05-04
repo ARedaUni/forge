@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { InMemoryFeedExclusionAdapter } from '../adapters/outbound/feed-exclusion/inMemory'
-import type { FeedCandidate, FeedPort, FeedQuery } from '../domain/feed/port'
-import type { Location, UserProfile } from '../domain/user/types'
-import { UserIdSchema, type UserId } from '../domain/shared/types'
+import type { FeedCandidate, FeedPort, FeedQuery } from '../core/feed/port'
+import type { Location, UserProfile } from '../core/user/types'
+import { UserIdSchema, type UserId } from '../core/shared/types'
 import { GetFeedUseCase } from './getFeed'
 
 const userId = (): UserId => UserIdSchema.parse(randomUUID())

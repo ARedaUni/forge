@@ -1,4 +1,4 @@
-import type { LogFields, Logger } from '../../../domain/observability/logger'
+import type { LogFields, Logger } from '../../../core/observability/logger'
 import { runDeliveryContract } from './contract'
 import { LoggingNotificationDeliveryAdapter } from './logging'
 

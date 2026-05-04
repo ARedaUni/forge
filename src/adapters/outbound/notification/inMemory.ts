@@ -1,5 +1,5 @@
-import type { NotificationDeliveryPort } from '../../../domain/notification/port'
-import type { MatchNotification } from '../../../domain/notification/types'
+import type { NotificationDeliveryPort } from '../../../core/notification/port'
+import type { MatchNotification } from '../../../core/notification/types'
 
 export class InMemoryNotificationDeliveryAdapter
   implements NotificationDeliveryPort

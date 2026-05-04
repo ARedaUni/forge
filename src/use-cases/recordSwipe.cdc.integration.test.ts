@@ -14,8 +14,8 @@ import { InMemorySwipeMatchAdapter } from '../adapters/outbound/swipe-match/inMe
 import {
   MatchNotificationSchema,
   type MatchNotification,
-} from '../domain/notification/types'
-import { UserIdSchema } from '../domain/shared/types'
+} from '../core/notification/types'
+import { UserIdSchema } from '../core/shared/types'
 import {
   CONNECTOR_NAME,
   registerMatchesConnector,

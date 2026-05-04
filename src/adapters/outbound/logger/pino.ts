@@ -1,5 +1,5 @@
 import pino, { type Logger as PinoLogger, type LoggerOptions } from 'pino'
-import type { LogFields, Logger } from '../../../domain/observability/logger'
+import type { LogFields, Logger } from '../../../core/observability/logger'
 
 export class PinoLoggerAdapter implements Logger {
   private readonly p: PinoLogger

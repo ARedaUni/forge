@@ -3,8 +3,8 @@ import type {
   ListMatchesOptions,
   MatchEntry,
   MatchPort,
-} from '../../../domain/match/port'
-import { UserIdSchema, type UserId } from '../../../domain/shared/types'
+} from '../../../core/match/port'
+import { UserIdSchema, type UserId } from '../../../core/shared/types'
 
 const keyFor = (userId: UserId): string => `matches:${userId}`
 

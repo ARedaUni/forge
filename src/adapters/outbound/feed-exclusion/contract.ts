@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import type { FeedExclusionPort } from '../../../domain/feed-exclusion/port'
-import { UserIdSchema, type UserId } from '../../../domain/shared/types'
+import type { FeedExclusionPort } from '../../../core/feed-exclusion/port'
+import { UserIdSchema, type UserId } from '../../../core/shared/types'
 
 const userId = (): UserId => UserIdSchema.parse(randomUUID())
 

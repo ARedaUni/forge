@@ -1,5 +1,5 @@
-import type { ListMatchesOptions, MatchEntry, MatchPort } from '../domain/match/port'
-import type { UserId } from '../domain/shared/types'
+import type { ListMatchesOptions, MatchEntry, MatchPort } from '../core/match/port'
+import type { UserId } from '../core/shared/types'
 
 export class ListMatchesUseCase {
   constructor(private readonly matchPort: MatchPort) {}

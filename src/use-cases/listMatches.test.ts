@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { InMemoryMatchAdapter } from '../adapters/outbound/match/inMemory'
-import { UserIdSchema } from '../domain/shared/types'
+import { UserIdSchema } from '../core/shared/types'
 import { ListMatchesUseCase } from './listMatches'
 
 const VIEWER = UserIdSchema.parse('00000000-0000-4000-8000-00000000000a')

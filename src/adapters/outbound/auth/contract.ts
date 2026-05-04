@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { AuthError, type AuthPort } from '../../../domain/auth/port'
-import { UserIdSchema, type UserId } from '../../../domain/shared/types'
+import { AuthError, type AuthPort } from '../../../core/auth/port'
+import { UserIdSchema, type UserId } from '../../../core/shared/types'
 
 const userId = (): UserId => UserIdSchema.parse(randomUUID())
 

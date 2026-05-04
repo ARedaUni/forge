@@ -1,6 +1,6 @@
-import type { SwipeMatchPort, SwipeResult } from '../../../domain/swipe-match/port'
-import type { Swipe } from '../../../domain/swipe-match/types'
-import type { UserId } from '../../../domain/shared/types'
+import type { SwipeMatchPort, SwipeResult } from '../../../core/swipe-match/port'
+import type { Swipe } from '../../../core/swipe-match/types'
+import type { UserId } from '../../../core/shared/types'
 
 const pairKey = (a: UserId, b: UserId): string => {
   if (a < b) return `${a}|${b}`

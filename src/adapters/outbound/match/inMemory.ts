@@ -2,8 +2,8 @@ import type {
   ListMatchesOptions,
   MatchEntry,
   MatchPort,
-} from '../../../domain/match/port'
-import type { UserId } from '../../../domain/shared/types'
+} from '../../../core/match/port'
+import type { UserId } from '../../../core/shared/types'
 
 const pairKey = (a: UserId, b: UserId): string => {
   if (a < b) return `${a}|${b}`

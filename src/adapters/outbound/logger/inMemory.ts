@@ -1,4 +1,4 @@
-import type { LogFields, LogRecord, Logger } from '../../../domain/observability/logger'
+import type { LogFields, LogRecord, Logger } from '../../../core/observability/logger'
 
 export class InMemoryLoggerAdapter implements Logger {
   readonly records: LogRecord[]

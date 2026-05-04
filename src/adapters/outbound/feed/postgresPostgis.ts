@@ -1,7 +1,7 @@
 import type pg from 'pg'
-import type { FeedCandidate, FeedPort, FeedQuery } from '../../../domain/feed/port'
-import { GenderSchema, type Gender, type UserProfile } from '../../../domain/user/types'
-import { UserIdSchema } from '../../../domain/shared/types'
+import type { FeedCandidate, FeedPort, FeedQuery } from '../../../core/feed/port'
+import { GenderSchema, type Gender, type UserProfile } from '../../../core/user/types'
+import { UserIdSchema } from '../../../core/shared/types'
 
 const QUERY_SQL = `
   WITH center AS (

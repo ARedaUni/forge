@@ -1,6 +1,6 @@
 import type Redis from 'ioredis'
-import type { FeedExclusionPort } from '../../../domain/feed-exclusion/port'
-import type { UserId } from '../../../domain/shared/types'
+import type { FeedExclusionPort } from '../../../core/feed-exclusion/port'
+import type { UserId } from '../../../core/shared/types'
 
 const keyFor = (viewer: UserId): string => `seen:${viewer}`
 

@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { InMemoryFeedExclusionAdapter } from '../adapters/outbound/feed-exclusion/inMemory'
 import { InMemoryMatchAdapter } from '../adapters/outbound/match/inMemory'
 import { InMemorySwipeMatchAdapter } from '../adapters/outbound/swipe-match/inMemory'
-import { UserIdSchema, type UserId } from '../domain/shared/types'
-import type { Swipe } from '../domain/swipe-match/types'
+import { UserIdSchema, type UserId } from '../core/shared/types'
+import type { Swipe } from '../core/swipe-match/types'
 import { RecordSwipeUseCase } from './recordSwipe'
 
 const SWIPER = UserIdSchema.parse('00000000-0000-4000-8000-00000000000a')

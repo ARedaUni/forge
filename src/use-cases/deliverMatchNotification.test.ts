@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { InMemoryNotificationDeliveryAdapter } from '../adapters/outbound/notification/inMemory'
-import type { NotificationDeliveryPort } from '../domain/notification/port'
-import { MatchNotificationSchema } from '../domain/notification/types'
-import { UserIdSchema } from '../domain/shared/types'
+import type { NotificationDeliveryPort } from '../core/notification/port'
+import { MatchNotificationSchema } from '../core/notification/types'
+import { UserIdSchema } from '../core/shared/types'
 import { DeliverMatchNotificationUseCase } from './deliverMatchNotification'
 
 const A = UserIdSchema.parse('00000000-0000-4000-8000-00000000000a')

@@ -1,6 +1,6 @@
-import type { Logger } from '../../../domain/observability/logger'
-import type { NotificationDeliveryPort } from '../../../domain/notification/port'
-import type { MatchNotification } from '../../../domain/notification/types'
+import type { Logger } from '../../../core/observability/logger'
+import type { NotificationDeliveryPort } from '../../../core/notification/port'
+import type { MatchNotification } from '../../../core/notification/types'
 
 export class LoggingNotificationDeliveryAdapter
   implements NotificationDeliveryPort

@@ -1,7 +1,7 @@
-import { matchesFilters } from '../domain/feed/feedRule'
-import type { FeedCandidate, FeedPort } from '../domain/feed/port'
-import type { FeedExclusionPort } from '../domain/feed-exclusion/port'
-import type { Location, UserProfile } from '../domain/user/types'
+import { matchesFilters } from '../core/feed/feedRule'
+import type { FeedCandidate, FeedPort } from '../core/feed/port'
+import type { FeedExclusionPort } from '../core/feed-exclusion/port'
+import type { Location, UserProfile } from '../core/user/types'
 
 export type GetFeedInput = {
   viewer: UserProfile

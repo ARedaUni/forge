@@ -1,7 +1,7 @@
 import type pg from 'pg'
-import { GenderSchema, type Gender, type UserProfile } from '../../../domain/user/types'
-import { UserIdSchema, type UserId } from '../../../domain/shared/types'
-import type { UserRepositoryPort } from '../../../domain/user/port'
+import { GenderSchema, type Gender, type UserProfile } from '../../../core/user/types'
+import { UserIdSchema, type UserId } from '../../../core/shared/types'
+import type { UserRepositoryPort } from '../../../core/user/port'
 import { insertProfile } from '../feed/postgresPostgis'
 
 const FIND_BY_ID_SQL = `

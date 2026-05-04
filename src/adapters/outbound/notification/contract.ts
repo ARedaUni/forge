@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { NotificationDeliveryPort } from '../../../domain/notification/port'
-import { MatchNotificationSchema } from '../../../domain/notification/types'
-import { UserIdSchema } from '../../../domain/shared/types'
+import type { NotificationDeliveryPort } from '../../../core/notification/port'
+import { MatchNotificationSchema } from '../../../core/notification/types'
+import { UserIdSchema } from '../../../core/shared/types'
 
 export type DeliveryHarness = {
   adapter: NotificationDeliveryPort

@@ -1,10 +1,10 @@
-import type { FeedExclusionPort } from '../domain/feed-exclusion/port'
-import type { MatchPort } from '../domain/match/port'
+import type { FeedExclusionPort } from '../core/feed-exclusion/port'
+import type { MatchPort } from '../core/match/port'
 import type {
   SwipeMatchPort,
   SwipeResult,
-} from '../domain/swipe-match/port'
-import type { Swipe } from '../domain/swipe-match/types'
+} from '../core/swipe-match/port'
+import type { Swipe } from '../core/swipe-match/types'
 
 export class RecordSwipeUseCase {
   constructor(

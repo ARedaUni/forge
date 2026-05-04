@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { LogLevel, Logger, LogRecord } from '../../../domain/observability/logger'
+import type { LogLevel, Logger, LogRecord } from '../../../core/observability/logger'
 
 export type LoggerContractSetup = {
   name: string

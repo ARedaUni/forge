@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
-import { GenderSchema } from '../../../domain/user/types'
-import { UserIdSchema, type UserId } from '../../../domain/shared/types'
+import { GenderSchema } from '../../../core/user/types'
+import { UserIdSchema, type UserId } from '../../../core/shared/types'
 import {
   bootstrapPostgres,
   truncateUsers,

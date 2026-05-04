@@ -1,8 +1,8 @@
 import type Redis from 'ioredis'
-import type { UserId } from '../../../domain/shared/types'
-import { evaluateSwipe } from '../../../domain/swipe-match/matchRule'
-import type { SwipeMatchPort, SwipeResult } from '../../../domain/swipe-match/port'
-import { SwipeDecisionSchema, type Swipe, type SwipeDecision } from '../../../domain/swipe-match/types'
+import type { UserId } from '../../../core/shared/types'
+import { evaluateSwipe } from '../../../core/swipe-match/matchRule'
+import type { SwipeMatchPort, SwipeResult } from '../../../core/swipe-match/port'
+import { SwipeDecisionSchema, type Swipe, type SwipeDecision } from '../../../core/swipe-match/types'
 
 const SCRIPT = `
 local swiper = ARGV[1]

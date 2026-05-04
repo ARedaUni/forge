@@ -3,8 +3,8 @@ import type {
   ListMatchesOptions,
   MatchEntry,
   MatchPort,
-} from '../../../domain/match/port'
-import { UserIdSchema, type UserId } from '../../../domain/shared/types'
+} from '../../../core/match/port'
+import { UserIdSchema, type UserId } from '../../../core/shared/types'
 
 const RECORD_SQL = `
   INSERT INTO matches (user_id, other_user_id, matched_at)

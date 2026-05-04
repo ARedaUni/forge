@@ -1,6 +1,6 @@
 import type { Consumer, Kafka } from 'kafkajs'
-import { MatchNotificationSchema } from '../../../domain/notification/types'
-import type { Logger } from '../../../domain/observability/logger'
+import { MatchNotificationSchema } from '../../../core/notification/types'
+import type { Logger } from '../../../core/observability/logger'
 import type { DeliverMatchNotificationUseCase } from '../../../use-cases/deliverMatchNotification'
 
 export type NotificationConsumerOptions = {

@@ -1,6 +1,6 @@
 import jwt, { type SignOptions } from 'jsonwebtoken'
-import { AuthError, type AuthPort } from '../../../domain/auth/port'
-import { UserIdSchema, type UserId } from '../../../domain/shared/types'
+import { AuthError, type AuthPort } from '../../../core/auth/port'
+import { UserIdSchema, type UserId } from '../../../core/shared/types'
 
 type JwtConfig = {
   secret: string

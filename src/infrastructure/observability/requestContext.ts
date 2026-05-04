@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import type { Logger } from '../../domain/observability/logger'
+import type { Logger } from '../../core/observability/logger'
 
 const als = new AsyncLocalStorage<Logger>()
 

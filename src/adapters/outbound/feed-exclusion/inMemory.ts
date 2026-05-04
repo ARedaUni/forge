@@ -1,5 +1,5 @@
-import type { FeedExclusionPort } from '../../../domain/feed-exclusion/port'
-import type { UserId } from '../../../domain/shared/types'
+import type { FeedExclusionPort } from '../../../core/feed-exclusion/port'
+import type { UserId } from '../../../core/shared/types'
 
 export class InMemoryFeedExclusionAdapter implements FeedExclusionPort {
   private readonly shown = new Map<UserId, Set<UserId>>()
