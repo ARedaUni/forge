@@ -8,7 +8,12 @@ import { createKafka } from '../../../infrastructure/kafka/client'
 import { DeliverMatchNotificationUseCase } from '../../../use-cases/deliverMatchNotification'
 import { NotificationConsumer } from './notificationConsumer'
 
-const TOPIC = 'notifications'
+// Use a per-run topic so prior CDC tests (which write to the production
+// `notifications` topic) don't bleed messages into this consumer's view.
+// `fromBeginning: false` should make new consumer groups skip pre-existing
+// messages, but KafkaJS's offset-reset has timing races during partition
+// assignment that we don't need to fight here — give each run a fresh topic.
+const TOPIC = `notifications-consumer-test-${randomUUID()}`
 
 const A = UserIdSchema.parse(randomUUID())
 const B = UserIdSchema.parse(randomUUID())
