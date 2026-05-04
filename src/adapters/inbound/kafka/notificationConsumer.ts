@@ -1,10 +1,4 @@
-import {
-  ROOT_CONTEXT,
-  SpanKind,
-  propagation,
-  trace,
-  type Link,
-} from '@opentelemetry/api'
+import { ROOT_CONTEXT, SpanKind, propagation, trace, type Link } from '@opentelemetry/api'
 import type { Consumer, Kafka } from 'kafkajs'
 import {
   MatchNotificationSchema,
