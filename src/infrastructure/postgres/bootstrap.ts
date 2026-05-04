@@ -25,8 +25,14 @@ export async function bootstrapPostgres(pool: pg.Pool): Promise<void> {
       user_id        UUID NOT NULL,
       other_user_id  UUID NOT NULL,
       matched_at     TIMESTAMPTZ NOT NULL,
+      trace_context  TEXT,
       PRIMARY KEY (user_id, other_user_id)
     )
+  `)
+
+  // Idempotent for tables created before 14.5c shipped the column.
+  await pool.query(`
+    ALTER TABLE matches ADD COLUMN IF NOT EXISTS trace_context TEXT
   `)
 
   await pool.query(`

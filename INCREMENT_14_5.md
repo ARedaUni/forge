@@ -76,6 +76,25 @@ the tracer.
   Debezium → Kafka hop joins the same trace. Without it the async unit of
   work is severed from its trace — breaks the single-source-of-truth
   invariant the wide-events model depends on.
+  - **Approach (chosen): just-a-column.** Producer adapter writes a W3C
+    `traceparent` string into `matches.trace_context` inside the same tx as
+    the row. Debezium replicates it through the existing `renameFields` SMT
+    as `traceContext` on the wire. Consumer extracts it via OTel
+    `propagation.extract` and attaches it as a span **link** (not a child)
+    on its CONSUMER span — per OTel messaging semconv, since the producer
+    span has long closed by the time CDC fires (Datadog, Honeycomb, OTel
+    spec #2695 all align on this).
+  - **Future upgrade: official Debezium SMT.** Swap the just-a-column path
+    for `io.debezium.transforms.tracing.ActivateTracingSpan`, which lifts
+    the column into a Kafka header instead of leaving it in the payload and
+    integrates with the Connect worker's tracing pipeline. Heavier (needs
+    OpenTracing wiring on the Connect side); justify the move when we want
+    richer producer-span semantics (baggage, sampling decisions, header-
+    based propagation across non-Debezium consumers). See Debezium docs:
+    `integrations/tracing.html`.
+  - References: Gunnar Morling, *Revisiting the Outbox Pattern* (2024);
+    OTel messaging semantic conventions; Sridharan, *Distributed Tracing —
+    we've been doing it wrong* (2020).
 
 Span naming follows OTel `{verb} {object}` low-cardinality rule: `record
 swipe`, never `record_swipe_<userId>`. IDs go in attributes only.

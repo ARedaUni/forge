@@ -51,8 +51,14 @@ const MATCHES_CONNECTOR_CONFIG: Readonly<Record<string, string>> = {
   'transforms.addType.static.value': 'match',
   'transforms.renameFields.type':
     'org.apache.kafka.connect.transforms.ReplaceField$Value',
+  // `trace_context` carries the W3C traceparent the producer wrote inside the
+  // same tx as the row. We pass it through Debezium as a regular column —
+  // simpler than the official `io.debezium.transforms.tracing.ActivateTracingSpan`
+  // SMT, which expects OpenTracing wiring on the Connect worker. If we ever
+  // need richer producer-span linkage (e.g. baggage, sampling decisions),
+  // upgrade to that SMT — see INCREMENT_14_5.md §14.5c.
   'transforms.renameFields.renames':
-    'user_id:userId,other_user_id:otherUserId,matched_at:matchedAt',
+    'user_id:userId,other_user_id:otherUserId,matched_at:matchedAt,trace_context:traceContext',
 }
 
 export async function registerMatchesConnector(connectUrl: string): Promise<void> {

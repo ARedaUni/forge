@@ -94,6 +94,19 @@ services:
       retries: 30
       start_period: 30s
 
+  jaeger:
+    # All-in-one ships collector + query + UI in one image — fine for local
+    # dev. OTLP HTTP receiver on 4318 matches the app's default
+    # OTEL_EXPORTER_OTLP_ENDPOINT, so traces flow without further config.
+    image: jaegertracing/all-in-one:1.62.0
+    container_name: tinderclone-jaeger
+    ports:
+      - '16686:16686'
+      - '4317:4317'
+      - '4318:4318'
+    environment:
+      COLLECTOR_OTLP_ENABLED: 'true'
+
   postgres:
     image: postgis/postgis:16-3.4
     container_name: tinderclone-postgres

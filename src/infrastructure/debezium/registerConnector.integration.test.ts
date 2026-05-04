@@ -118,6 +118,9 @@ describe('matches CDC adapter — wire-format contract', () => {
       userId: userA,
       otherUserId: userB,
       matchedAt: at,
+      // Row inserted directly here (no producer adapter, no active OTel
+      // context), so Debezium replicates the column as null.
+      traceContext: null,
     })
   }, 30_000)
 })

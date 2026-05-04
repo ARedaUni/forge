@@ -1,7 +1,34 @@
+import {
+  ROOT_CONTEXT,
+  SpanKind,
+  propagation,
+  trace,
+  type Link,
+} from '@opentelemetry/api'
 import type { Consumer, Kafka } from 'kafkajs'
-import { MatchNotificationSchema } from '../../../core/notification/types'
+import {
+  MatchNotificationSchema,
+  type MatchNotification,
+} from '../../../core/notification/types'
 import type { Logger } from '../../../core/observability/logger'
 import type { DeliverMatchNotificationUseCase } from '../../../use-cases/deliverMatchNotification'
+
+const tracer = trace.getTracer('notification-consumer')
+
+// OTel messaging semconv: when a queue/CDC hop separates producer from
+// consumer, model the relationship as a span LINK, not parent-child. The
+// producer span is long closed by the time the consumer fires, so nesting
+// would distort durations. We extract the W3C traceparent the producer wrote
+// onto the matches row (carried through Debezium as a regular field) and
+// attach it as a link on the consumer span.
+function linksFromNotification(n: MatchNotification): Link[] {
+  if (!n.traceContext) return []
+  const carrier: Record<string, string> = { traceparent: n.traceContext }
+  const ctx = propagation.extract(ROOT_CONTEXT, carrier)
+  const spanContext = trace.getSpanContext(ctx)
+  if (!spanContext) return []
+  return [{ context: spanContext }]
+}
 
 export type NotificationConsumerOptions = {
   kafka: Kafka
@@ -90,15 +117,27 @@ export class NotificationConsumer {
           return
         }
 
-        try {
-          await this.useCase.execute(parsed.data)
-        } catch (err) {
-          this.logger.error('notification-consumer.delivery-failed', {
-            error: (err as Error).message,
-            userId: parsed.data.userId,
-            otherUserId: parsed.data.otherUserId,
-          })
-        }
+        await tracer.startActiveSpan(
+          'process match notification',
+          { kind: SpanKind.CONSUMER, links: linksFromNotification(parsed.data) },
+          async (span) => {
+            span.setAttribute('messaging.system', 'kafka')
+            span.setAttribute('messaging.destination.name', this.topic)
+            span.setAttribute('user.id', parsed.data.userId)
+            try {
+              await this.useCase.execute(parsed.data)
+            } catch (err) {
+              this.logger.error('notification-consumer.delivery-failed', {
+                error: (err as Error).message,
+                userId: parsed.data.userId,
+                otherUserId: parsed.data.otherUserId,
+              })
+              span.recordException(err as Error)
+            } finally {
+              span.end()
+            }
+          },
+        )
       },
     })
 
